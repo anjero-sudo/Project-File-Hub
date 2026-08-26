@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>ProjectFileHub.McpServer</RootNamespace>
+    <AssemblyName>ProjectFileHub.McpServer</AssemblyName>
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../ProjectFileHub.Core/ProjectFileHub.Core.csproj" />
+  </ItemGroup>
+</Project>

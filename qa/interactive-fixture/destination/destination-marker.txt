@@ -1,0 +1,1 @@
+Drop rename-me.txt into this folder during interaction testing.

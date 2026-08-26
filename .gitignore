@@ -1,0 +1,47 @@
+# Build outputs
+bin/
+obj/
+build/
+out/
+artifacts/
+
+# IDE and user state
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Local Codex/project orchestration records
+.project-memory/
+.agents/
+.codex/
+AGENTS.md
+
+# Unreleased local design drafts
+design/reference/
+
+# Test and coverage outputs
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+
+# Package and generated outputs
+packages/
+*.nupkg
+*.snupkg
+.tools/
+.nuget/
+
+# Local databases and logs
+*.db-shm
+*.db-wal
+*.log
+
+# OS noise
+Thumbs.db
+Desktop.ini
+.DS_Store

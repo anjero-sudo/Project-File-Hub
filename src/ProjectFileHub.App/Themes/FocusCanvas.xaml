@@ -1,0 +1,276 @@
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <Color x:Key="HubCanvasColor">#FF07101B</Color>
+    <Color x:Key="HubPanelColor">#FF0B1521</Color>
+    <Color x:Key="HubRaisedColor">#FF101C29</Color>
+    <Color x:Key="HubHoverColor">#FF15263A</Color>
+    <Color x:Key="HubSelectedColor">#FF0B3152</Color>
+    <Color x:Key="HubAccentColor">#FF0EA5E9</Color>
+    <Color x:Key="HubAccentStrongColor">#FF19B5FE</Color>
+    <Color x:Key="HubTextColor">#FFF2F6FA</Color>
+    <Color x:Key="HubTextSecondaryColor">#FFA7B3C3</Color>
+    <Color x:Key="HubTextMutedColor">#FF708096</Color>
+    <Color x:Key="HubBorderColor">#FF203044</Color>
+    <Color x:Key="HubDangerColor">#FFEF6A75</Color>
+    <Color x:Key="HubSuccessColor">#FF45C49A</Color>
+
+    <SolidColorBrush x:Key="HubCanvasBrush" Color="{StaticResource HubCanvasColor}" />
+    <SolidColorBrush x:Key="HubPanelBrush" Color="{StaticResource HubPanelColor}" />
+    <SolidColorBrush x:Key="HubRaisedBrush" Color="{StaticResource HubRaisedColor}" />
+    <SolidColorBrush x:Key="HubHoverBrush" Color="{StaticResource HubHoverColor}" />
+    <SolidColorBrush x:Key="HubSelectedBrush" Color="{StaticResource HubSelectedColor}" />
+    <SolidColorBrush x:Key="HubAccentBrush" Color="{StaticResource HubAccentColor}" />
+    <SolidColorBrush x:Key="HubAccentStrongBrush" Color="{StaticResource HubAccentStrongColor}" />
+    <SolidColorBrush x:Key="HubTextBrush" Color="{StaticResource HubTextColor}" />
+    <SolidColorBrush x:Key="HubTextSecondaryBrush" Color="{StaticResource HubTextSecondaryColor}" />
+    <SolidColorBrush x:Key="HubTextMutedBrush" Color="{StaticResource HubTextMutedColor}" />
+    <SolidColorBrush x:Key="HubBorderBrush" Color="{StaticResource HubBorderColor}" />
+    <SolidColorBrush x:Key="HubDangerBrush" Color="{StaticResource HubDangerColor}" />
+    <SolidColorBrush x:Key="HubSuccessBrush" Color="{StaticResource HubSuccessColor}" />
+
+    <!-- Keep pointer, selection, and keyboard-focus feedback inside the Focus Canvas palette. -->
+    <StaticResource x:Key="GridViewItemBackgroundPointerOver" ResourceKey="HubHoverBrush" />
+    <StaticResource x:Key="GridViewItemBackgroundPressed" ResourceKey="HubSelectedBrush" />
+    <StaticResource x:Key="GridViewItemBackgroundSelected" ResourceKey="HubSelectedBrush" />
+    <StaticResource x:Key="GridViewItemBackgroundSelectedPointerOver" ResourceKey="HubHoverBrush" />
+    <StaticResource x:Key="GridViewItemBackgroundSelectedPressed" ResourceKey="HubSelectedBrush" />
+    <StaticResource x:Key="GridViewItemSelectedBorderBrush" ResourceKey="HubAccentStrongBrush" />
+    <StaticResource x:Key="GridViewItemSelectedPointerOverBorderBrush" ResourceKey="HubAccentStrongBrush" />
+    <StaticResource x:Key="GridViewItemSelectedPressedBorderBrush" ResourceKey="HubAccentBrush" />
+    <StaticResource x:Key="GridViewItemSelectedInnerBorderBrush" ResourceKey="HubCanvasBrush" />
+    <StaticResource x:Key="GridViewItemFocusVisualPrimaryBrush" ResourceKey="HubAccentStrongBrush" />
+    <StaticResource x:Key="GridViewItemFocusVisualSecondaryBrush" ResourceKey="HubCanvasBrush" />
+    <StaticResource x:Key="GridViewItemFocusBorderBrush" ResourceKey="HubAccentStrongBrush" />
+    <Thickness x:Key="GridViewItemSelectedBorderThickness">2</Thickness>
+    <CornerRadius x:Key="GridViewItemCornerRadius">8</CornerRadius>
+
+    <StaticResource x:Key="ListViewItemBackgroundPointerOver" ResourceKey="HubHoverBrush" />
+    <StaticResource x:Key="ListViewItemBackgroundPressed" ResourceKey="HubSelectedBrush" />
+    <StaticResource x:Key="ListViewItemBackgroundSelected" ResourceKey="HubSelectedBrush" />
+    <StaticResource x:Key="ListViewItemBackgroundSelectedPointerOver" ResourceKey="HubHoverBrush" />
+    <StaticResource x:Key="ListViewItemBackgroundSelectedPressed" ResourceKey="HubSelectedBrush" />
+    <StaticResource x:Key="ListViewItemFocusVisualPrimaryBrush" ResourceKey="HubAccentStrongBrush" />
+    <StaticResource x:Key="ListViewItemFocusVisualSecondaryBrush" ResourceKey="HubCanvasBrush" />
+    <StaticResource x:Key="ListViewItemFocusBorderBrush" ResourceKey="HubAccentStrongBrush" />
+    <StaticResource x:Key="ListViewItemFocusSecondaryBorderBrush" ResourceKey="HubCanvasBrush" />
+    <StaticResource x:Key="ListViewItemSelectionIndicatorBrush" ResourceKey="HubAccentStrongBrush" />
+    <StaticResource x:Key="ListViewItemSelectionIndicatorPointerOverBrush" ResourceKey="HubAccentStrongBrush" />
+    <StaticResource x:Key="ListViewItemSelectionIndicatorPressedBrush" ResourceKey="HubAccentBrush" />
+
+    <Style x:Key="HubToolbarButtonStyle" TargetType="Button">
+        <Setter Property="Background" Value="{StaticResource HubRaisedBrush}" />
+        <Setter Property="Foreground" Value="{StaticResource HubTextSecondaryBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource HubBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="7" />
+        <Setter Property="Padding" Value="12,0" />
+        <Setter Property="Height" Value="36" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+
+    <Style x:Key="HubPrimaryButtonStyle" TargetType="Button" BasedOn="{StaticResource HubToolbarButtonStyle}">
+        <Setter Property="Background" Value="{StaticResource HubSelectedBrush}" />
+        <Setter Property="Foreground" Value="{StaticResource HubAccentStrongBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource HubAccentBrush}" />
+    </Style>
+
+    <Style x:Key="HubIconButtonStyle" TargetType="Button" BasedOn="{StaticResource HubToolbarButtonStyle}">
+        <Setter Property="Width" Value="36" />
+        <Setter Property="Padding" Value="0" />
+    </Style>
+
+    <Style x:Key="HubPreviewToggleStyle" TargetType="ToggleButton">
+        <Setter Property="Background" Value="{StaticResource HubRaisedBrush}" />
+        <Setter Property="Foreground" Value="{StaticResource HubTextSecondaryBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource HubBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="7" />
+        <Setter Property="Padding" Value="10,0" />
+        <Setter Property="Height" Value="36" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+
+    <Style x:Key="HubCompactComboBoxStyle" TargetType="ComboBox">
+        <Setter Property="Height" Value="36" />
+        <Setter Property="Padding" Value="12,0,10,0" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="CornerRadius" Value="7" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+
+    <Style x:Key="HubSettingsCardStyle" TargetType="Border">
+        <Setter Property="Background" Value="{StaticResource HubPanelBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource HubBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="9" />
+        <Setter Property="Padding" Value="16,12" />
+    </Style>
+
+    <Style x:Key="HubFileTypeBadgeStyle" TargetType="Border">
+        <Setter Property="MinWidth" Value="25" />
+        <Setter Property="Height" Value="17" />
+        <Setter Property="Padding" Value="4,0" />
+        <Setter Property="Background" Value="{StaticResource HubRaisedBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource HubAccentBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="4" />
+        <Setter Property="HorizontalAlignment" Value="Center" />
+        <Setter Property="VerticalAlignment" Value="Bottom" />
+    </Style>
+
+    <Style x:Key="HubFileTypeBadgeTextStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="8" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{StaticResource HubAccentStrongBrush}" />
+        <Setter Property="HorizontalAlignment" Value="Center" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="TextAlignment" Value="Center" />
+    </Style>
+
+    <Style x:Key="HubRailHitButtonStyle" TargetType="Button" BasedOn="{StaticResource HubToolbarButtonStyle}">
+        <Setter Property="Width" Value="58" />
+        <Setter Property="Height" Value="52" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Margin" Value="0" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+        <Setter Property="VerticalAlignment" Value="Stretch" />
+    </Style>
+
+    <Style x:Key="HubRailRadioStyle" TargetType="RadioButton">
+        <Setter Property="Foreground" Value="{StaticResource HubTextSecondaryBrush}" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="Width" Value="58" />
+        <Setter Property="HorizontalAlignment" Value="Center" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="Height" Value="52" />
+        <Setter Property="Margin" Value="0" />
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RadioButton">
+                    <Grid Width="{TemplateBinding Width}"
+                          Height="{TemplateBinding Height}"
+                          Background="Transparent">
+                        <VisualStateManager.VisualStateGroups>
+                            <VisualStateGroup x:Name="CommonStates">
+                                <VisualState x:Name="Normal" />
+                                <VisualState x:Name="PointerOver">
+                                    <VisualState.Setters>
+                                        <Setter Target="RootBorder.Background" Value="{StaticResource HubHoverBrush}" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                                <VisualState x:Name="Pressed">
+                                    <VisualState.Setters>
+                                        <Setter Target="RootBorder.Opacity" Value="0.82" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                                <VisualState x:Name="Disabled">
+                                    <VisualState.Setters>
+                                        <Setter Target="RootBorder.Opacity" Value="0.42" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                            </VisualStateGroup>
+                            <VisualStateGroup x:Name="CheckStates">
+                                <VisualState x:Name="Unchecked" />
+                                <VisualState x:Name="Checked">
+                                    <VisualState.Setters>
+                                        <Setter Target="RootBorder.Background" Value="{StaticResource HubSelectedBrush}" />
+                                        <Setter Target="SelectionIndicator.Opacity" Value="1" />
+                                        <Setter Target="ContentPresenter.Foreground" Value="{StaticResource HubAccentStrongBrush}" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                                <VisualState x:Name="Indeterminate" />
+                            </VisualStateGroup>
+                        </VisualStateManager.VisualStateGroups>
+                        <Border x:Name="RootBorder"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="{TemplateBinding CornerRadius}">
+                            <Grid>
+                                <Rectangle x:Name="SelectionIndicator"
+                                           Width="3"
+                                           Height="24"
+                                           Margin="3,0,0,0"
+                                           HorizontalAlignment="Left"
+                                           VerticalAlignment="Center"
+                                           Fill="{StaticResource HubAccentStrongBrush}"
+                                           RadiusX="2"
+                                           RadiusY="2"
+                                           Opacity="0" />
+                                <ContentPresenter x:Name="ContentPresenter"
+                                                  Content="{TemplateBinding Content}"
+                                                  ContentTemplate="{TemplateBinding ContentTemplate}"
+                                                  Foreground="{TemplateBinding Foreground}"
+                                                  Margin="0"
+                                                  HorizontalAlignment="Stretch"
+                                                  VerticalAlignment="Stretch"
+                                                  HorizontalContentAlignment="Center"
+                                                  VerticalContentAlignment="Center" />
+                            </Grid>
+                        </Border>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="HubTreeViewItemStyle" TargetType="TreeViewItem">
+        <Setter Property="MinHeight" Value="40" />
+        <Setter Property="Padding" Value="0" />
+        <!-- The stock WinUI glyph viewport is 12x12; keep the glyph inside it while the row stays 40px high. -->
+        <Setter Property="GlyphSize" Value="12" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="CornerRadius" Value="7" />
+    </Style>
+
+    <Style x:Key="HubGridItemStyle" TargetType="GridViewItem">
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Margin" Value="6" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="VerticalContentAlignment" Value="Stretch" />
+        <Setter Property="CornerRadius" Value="8" />
+    </Style>
+
+    <Style x:Key="HubListItemStyle" TargetType="ListViewItem">
+        <Setter Property="Padding" Value="8,5" />
+        <Setter Property="MinHeight" Value="38" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="CornerRadius" Value="6" />
+    </Style>
+
+    <Style x:Key="HubFilmstripItemStyle" TargetType="ListViewItem">
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Margin" Value="6" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="VerticalContentAlignment" Value="Stretch" />
+        <Setter Property="CornerRadius" Value="8" />
+    </Style>
+
+    <Style x:Key="HubInlineGlyphStyle" TargetType="FontIcon">
+        <Setter Property="Width" Value="18" />
+        <Setter Property="Height" Value="18" />
+        <Setter Property="HorizontalAlignment" Value="Center" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="IsHitTestVisible" Value="False" />
+    </Style>
+
+    <Style x:Key="HubInlineLabelStyle" TargetType="TextBlock">
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="LineHeight" Value="18" />
+        <Setter Property="TextLineBounds" Value="Full" />
+    </Style>
+</ResourceDictionary>

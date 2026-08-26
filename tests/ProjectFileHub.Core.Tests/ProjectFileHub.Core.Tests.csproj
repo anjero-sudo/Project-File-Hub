@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>ProjectFileHub.Core.Tests</RootNamespace>
+    <AssemblyName>ProjectFileHub.Core.Tests</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/ProjectFileHub.Core/ProjectFileHub.Core.csproj" />
+  </ItemGroup>
+</Project>
