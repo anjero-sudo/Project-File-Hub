@@ -9,7 +9,7 @@ namespace ProjectFileHub.McpServer;
 public sealed class ReadOnlyMcpServer
 {
     private const string ServerName = "project-file-hub";
-    private const string ServerVersion = "0.0.1";
+    private const string ServerVersion = "0.0.3";
     private const string FallbackProtocolVersion = "2025-06-18";
     private const string Instructions =
         "Read-only access to the one active project explicitly registered in Project File Hub. "

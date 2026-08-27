@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 using ProjectFileHub.Core.Models;
 using ProjectFileHub.Core.Services;
@@ -13,6 +14,7 @@ public sealed class ExplorerItemViewModel : INotifyPropertyChanged
 {
     private BitmapImage? _thumbnail;
     private bool _isRenaming;
+    private bool _isSelected;
     private string _renameText;
     private string _renameError = string.Empty;
 
@@ -21,6 +23,7 @@ public sealed class ExplorerItemViewModel : INotifyPropertyChanged
         Item = item;
         VisualKind = FileVisualClassifier.Classify(item);
         IconBadgeText = FileVisualClassifier.GetBadge(item);
+        IconBrush = ResolveIconBrush(VisualKind);
         _renameText = item.Name;
         ShowProjectLocation = showProjectLocation && !string.IsNullOrWhiteSpace(projectRoot);
         if (ShowProjectLocation)
@@ -41,7 +44,7 @@ public sealed class ExplorerItemViewModel : INotifyPropertyChanged
 
     public bool IsDirectory => Item.IsDirectory;
 
-    public string DisplayType => Item.DisplayType;
+    public string DisplayType => FileFormatCatalog.GetDisplayType(Item);
 
     public string ModifiedText => Item.ModifiedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm");
 
@@ -60,27 +63,14 @@ public sealed class ExplorerItemViewModel : INotifyPropertyChanged
     public Visibility IconBadgeVisibility =>
         string.IsNullOrEmpty(IconBadgeText) ? Visibility.Collapsed : Visibility.Visible;
 
-    public string IconDescription => IsDirectory ? "文件夹" : $"{DisplayType} 文件";
+    public string IconDescription =>
+        IsDirectory
+            ? "文件夹"
+            : $"{FileIconCatalog.Get(VisualKind).AccessibleName}，{DisplayType}";
 
-    public string IconGlyph => VisualKind switch
-    {
-        FileVisualKind.Folder => "\uE8B7",
-        FileVisualKind.Image => "\uEB9F",
-        FileVisualKind.Video => "\uE714",
-        FileVisualKind.Audio => "\uE8D6",
-        FileVisualKind.Code or FileVisualKind.Data => "\uE943",
-        FileVisualKind.Archive => "\uF012",
-        FileVisualKind.Pdf
-            or FileVisualKind.Word
-            or FileVisualKind.Spreadsheet
-            or FileVisualKind.Presentation
-            or FileVisualKind.Markdown
-            or FileVisualKind.Text
-            or FileVisualKind.Database
-            or FileVisualKind.Font
-            or FileVisualKind.Document => "\uE8A5",
-        _ => "\uE7C3"
-    };
+    public SolidColorBrush IconBrush { get; }
+
+    public string IconGlyph => FileIconCatalog.Get(VisualKind).Glyph;
 
     public BitmapImage? Thumbnail
     {
@@ -102,6 +92,24 @@ public sealed class ExplorerItemViewModel : INotifyPropertyChanged
     public Visibility ThumbnailVisibility => Thumbnail is null ? Visibility.Collapsed : Visibility.Visible;
 
     public Visibility IconVisibility => Thumbnail is null ? Visibility.Visible : Visibility.Collapsed;
+
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set
+        {
+            if (_isSelected == value)
+            {
+                return;
+            }
+
+            _isSelected = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(SelectionVisibility));
+        }
+    }
+
+    public Visibility SelectionVisibility => IsSelected ? Visibility.Visible : Visibility.Collapsed;
 
     public bool IsRenaming => _isRenaming;
 
@@ -202,6 +210,46 @@ public sealed class ExplorerItemViewModel : INotifyPropertyChanged
         }
 
         return unit == 0 ? $"{value:0} {units[unit]}" : $"{value:0.#} {units[unit]}";
+    }
+
+    private static SolidColorBrush ResolveIconBrush(FileVisualKind kind)
+    {
+        var resourceKey = kind switch
+        {
+            FileVisualKind.Folder => "HubFileFolderBrush",
+            FileVisualKind.Image => "HubFileImageBrush",
+            FileVisualKind.Video => "HubFileVideoBrush",
+            FileVisualKind.Audio => "HubFileAudioBrush",
+            FileVisualKind.Pdf => "HubFilePdfBrush",
+            FileVisualKind.Word => "HubFileWordBrush",
+            FileVisualKind.Spreadsheet => "HubFileSpreadsheetBrush",
+            FileVisualKind.Presentation => "HubFilePresentationBrush",
+            FileVisualKind.Markdown => "HubFileMarkdownBrush",
+            FileVisualKind.Text => "HubFileTextBrush",
+            FileVisualKind.Code => "HubFileCodeBrush",
+            FileVisualKind.Data => "HubFileDataBrush",
+            FileVisualKind.Database => "HubFileDatabaseBrush",
+            FileVisualKind.Archive => "HubFileArchiveBrush",
+            FileVisualKind.Script => "HubFileCodeBrush",
+            FileVisualKind.Executable => "HubFileExecutableBrush",
+            FileVisualKind.Font => "HubFileFontBrush",
+            FileVisualKind.Web => "HubFileMarkdownBrush",
+            FileVisualKind.Mail => "HubFileWordBrush",
+            FileVisualKind.Ebook => "HubFileDocumentBrush",
+            FileVisualKind.RasterEditor => "HubFileImageBrush",
+            FileVisualKind.VectorEditor => "HubFilePresentationBrush",
+            FileVisualKind.UiPrototype => "HubFileDatabaseBrush",
+            FileVisualKind.MotionGraphics or FileVisualKind.VideoProject => "HubFileVideoBrush",
+            FileVisualKind.Blender => "HubFilePresentationBrush",
+            FileVisualKind.Mesh3D => "HubFileDataBrush",
+            FileVisualKind.Cad => "HubFileCodeBrush",
+            FileVisualKind.CameraRaw => "HubFileImageBrush",
+            FileVisualKind.DesignPackage => "HubFileFontBrush",
+            FileVisualKind.Document => "HubFileDocumentBrush",
+            _ => "HubFileOtherBrush"
+        };
+
+        return (SolidColorBrush)Application.Current.Resources[resourceKey];
     }
 
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>

@@ -95,8 +95,57 @@ static Task TestFileVisuals()
             extension,
             category);
 
+    var representatives = new (string Name, string Extension, FileItemCategory Category, bool IsDirectory, FileVisualKind Expected)[]
+    {
+        ("assets", string.Empty, FileItemCategory.Folder, true, FileVisualKind.Folder),
+        ("frame.png", ".png", FileItemCategory.Image, false, FileVisualKind.Image),
+        ("trailer.mp4", ".mp4", FileItemCategory.Video, false, FileVisualKind.Video),
+        ("ambience.opus", ".opus", FileItemCategory.Audio, false, FileVisualKind.Audio),
+        ("brief.pdf", ".pdf", FileItemCategory.Document, false, FileVisualKind.Pdf),
+        ("script.docx", ".docx", FileItemCategory.Document, false, FileVisualKind.Word),
+        ("shots.xlsx", ".xlsx", FileItemCategory.Document, false, FileVisualKind.Spreadsheet),
+        ("pitch.pptx", ".pptx", FileItemCategory.Document, false, FileVisualKind.Presentation),
+        ("README.md", ".md", FileItemCategory.Document, false, FileVisualKind.Markdown),
+        ("notes.txt", ".txt", FileItemCategory.Document, false, FileVisualKind.Text),
+        ("tool.py", ".py", FileItemCategory.Code, false, FileVisualKind.Code),
+        ("project.json", ".json", FileItemCategory.Code, false, FileVisualKind.Data),
+        ("catalog.sqlite3", ".sqlite3", FileItemCategory.Other, false, FileVisualKind.Database),
+        ("delivery.zip", ".zip", FileItemCategory.Archive, false, FileVisualKind.Archive),
+        ("build.ps1", ".ps1", FileItemCategory.Code, false, FileVisualKind.Script),
+        ("setup.msi", ".msi", FileItemCategory.Other, false, FileVisualKind.Executable),
+        ("display.woff2", ".woff2", FileItemCategory.Other, false, FileVisualKind.Font),
+        ("index.html", ".html", FileItemCategory.Code, false, FileVisualKind.Web),
+        ("message.eml", ".eml", FileItemCategory.Document, false, FileVisualKind.Mail),
+        ("book.epub", ".epub", FileItemCategory.Document, false, FileVisualKind.Ebook),
+        ("art.psd", ".psd", FileItemCategory.Other, false, FileVisualKind.RasterEditor),
+        ("logo.ai", ".ai", FileItemCategory.Other, false, FileVisualKind.VectorEditor),
+        ("wireframe.fig", ".fig", FileItemCategory.Other, false, FileVisualKind.UiPrototype),
+        ("title.aep", ".aep", FileItemCategory.Other, false, FileVisualKind.MotionGraphics),
+        ("shot.prproj", ".prproj", FileItemCategory.Video, false, FileVisualKind.VideoProject),
+        ("scene.blend", ".blend", FileItemCategory.Other, false, FileVisualKind.Blender),
+        ("mesh.fbx", ".fbx", FileItemCategory.Other, false, FileVisualKind.Mesh3D),
+        ("plan.dwg", ".dwg", FileItemCategory.Other, false, FileVisualKind.Cad),
+        ("negative.dng", ".dng", FileItemCategory.Image, false, FileVisualKind.CameraRaw),
+        ("layout.indd", ".indd", FileItemCategory.Other, false, FileVisualKind.DesignPackage),
+        ("legacy.pages", ".pages", FileItemCategory.Document, false, FileVisualKind.Document),
+        ("unknown.zzz", ".zzz", FileItemCategory.Other, false, FileVisualKind.Other)
+    };
+
+    foreach (var representative in representatives)
+    {
+        var item = Item(representative.Name, representative.Extension, representative.Category, representative.IsDirectory);
+        Assert(FileVisualClassifier.Classify(item) == representative.Expected,
+            $"{representative.Extension} must map to {representative.Expected}.");
+    }
+
+    Assert(FileIconCatalog.IconFamilyCount == Enum.GetValues<FileVisualKind>().Length
+           && FileIconCatalog.DistinctGlyphCount == FileIconCatalog.IconFamilyCount
+           && Enum.GetValues<FileVisualKind>().All(kind => !string.IsNullOrEmpty(FileIconCatalog.Get(kind).Glyph)),
+        "Every visual family must have one non-empty and distinct Fluent icon glyph.");
+
     var folder = Item("assets", string.Empty, FileItemCategory.Folder, isDirectory: true);
     var image = Item("frame.png", ".png", FileItemCategory.Image);
+    var rawImage = Item("negative.dng", ".dng", FileItemCategory.Image);
     var pdf = Item("brief.pdf", ".pdf", FileItemCategory.Document);
     var word = Item("script.docx", ".docx", FileItemCategory.Document);
     var sheet = Item("shots.xlsx", ".xlsx", FileItemCategory.Document);
@@ -104,28 +153,47 @@ static Task TestFileVisuals()
     var json = Item("project.json", ".json", FileItemCategory.Code);
     var python = Item("tool.py", ".py", FileItemCategory.Code);
     var archive = Item("delivery.zip", ".zip", FileItemCategory.Archive);
-
-    Assert(FileVisualClassifier.Classify(folder) == FileVisualKind.Folder
-           && FileVisualClassifier.Classify(image) == FileVisualKind.Image
-           && FileVisualClassifier.Classify(pdf) == FileVisualKind.Pdf
-           && FileVisualClassifier.Classify(word) == FileVisualKind.Word
-           && FileVisualClassifier.Classify(sheet) == FileVisualKind.Spreadsheet
-           && FileVisualClassifier.Classify(markdown) == FileVisualKind.Markdown
-           && FileVisualClassifier.Classify(json) == FileVisualKind.Data
-           && FileVisualClassifier.Classify(python) == FileVisualKind.Code
-           && FileVisualClassifier.Classify(archive) == FileVisualKind.Archive,
-        "Common file extensions must receive stable semantic visual kinds.");
+    var video = Item("trailer.mp4", ".mp4", FileItemCategory.Video);
+    var audio = Item("ambience.opus", ".opus", FileItemCategory.Audio);
+    var script = Item("build.ps1", ".ps1", FileItemCategory.Code);
+    var database = Item("catalog.sqlite3", ".sqlite3", FileItemCategory.Other);
+    var creative = Item("shot.prproj", ".prproj", FileItemCategory.Video);
+    var designPackage = Item("layout.indd", ".indd", FileItemCategory.Other);
     Assert(FileVisualClassifier.GetBadge(folder) == string.Empty
            && FileVisualClassifier.GetBadge(image) == string.Empty,
         "Folders and image thumbnails must not receive extension badges.");
     Assert(FileVisualClassifier.GetBadge(pdf) == "PDF"
-           && FileVisualClassifier.GetBadge(word) == "DOC"
-           && FileVisualClassifier.GetBadge(sheet) == "XLS"
+           && FileVisualClassifier.GetBadge(word) == "DOCX"
+           && FileVisualClassifier.GetBadge(sheet) == "XLSX"
            && FileVisualClassifier.GetBadge(markdown) == "MD"
            && FileVisualClassifier.GetBadge(json) == "JSON"
            && FileVisualClassifier.GetBadge(python) == "PY"
-           && FileVisualClassifier.GetBadge(archive) == "ZIP",
+           && FileVisualClassifier.GetBadge(archive) == "ZIP"
+           && FileVisualClassifier.GetBadge(video) == "MP4"
+           && FileVisualClassifier.GetBadge(audio) == "OPUS"
+           && FileVisualClassifier.GetBadge(script) == "PS1"
+           && FileVisualClassifier.GetBadge(database) == "DB"
+           && FileVisualClassifier.GetBadge(rawImage) == "DNG"
+           && FileVisualClassifier.GetBadge(creative) == "PR",
         "Badges must stay compact while distinguishing common file formats.");
+    Assert(FileFormatCatalog.SupportedExtensionCount >= 220
+           && FileCategoryClassifier.Classify(".svg", isDirectory: false) == FileItemCategory.Image
+           && FileCategoryClassifier.Classify(".dng", isDirectory: false) == FileItemCategory.Image
+           && FileCategoryClassifier.Classify(".webm", isDirectory: false) == FileItemCategory.Video
+           && FileCategoryClassifier.Classify(".prproj", isDirectory: false) == FileItemCategory.Video
+           && FileCategoryClassifier.Classify(".opus", isDirectory: false) == FileItemCategory.Audio
+           && FileCategoryClassifier.Classify(".html", isDirectory: false) == FileItemCategory.Code
+           && FileCategoryClassifier.Classify(".vue", isDirectory: false) == FileItemCategory.Code
+           && FileCategoryClassifier.Classify(".zst", isDirectory: false) == FileItemCategory.Archive,
+        "The default format catalog must cover common project and creative file specifications.");
+    Assert(FileFormatCatalog.GetDisplayType(image) == "PNG 图片"
+           && FileFormatCatalog.GetDisplayType(markdown) == "Markdown 文档"
+           && FileFormatCatalog.GetDisplayType(video) == "MP4 视频"
+           && FileFormatCatalog.GetDisplayType(database) == "数据库"
+           && FileFormatCatalog.GetDisplayType(creative) == "Premiere 项目"
+           && FileFormatCatalog.GetDisplayType(rawImage) == "DNG 相机原片"
+           && FileFormatCatalog.GetDisplayType(designPackage) == "INDD 排版设计",
+        "Known formats must expose readable type names for the list view.");
     return Task.CompletedTask;
 }
 

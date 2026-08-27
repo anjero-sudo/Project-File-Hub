@@ -146,6 +146,7 @@
                                 <Grid.ContextFlyout>
                                     <MenuFlyout>
                                         <MenuFlyoutItem Text="打开" Tag="{Binding Content.FullPath}" Click="OnTreeMenuOpenClicked" />
+                                        <MenuFlyoutItem Text="在资源管理器中打开" Tag="{Binding Content.FullPath}" Click="OnTreeMenuOpenInExplorerClicked" />
                                         <MenuFlyoutItem Text="重命名" Tag="{Binding Content.FullPath}" Click="OnTreeMenuRenameClicked" />
                                         <MenuFlyoutSeparator />
                                         <MenuFlyoutItem Text="新建文件夹" Tag="{Binding Content.FullPath}" Click="OnTreeMenuNewFolderClicked" />
@@ -351,6 +352,7 @@
                             <MenuFlyoutItem Text="新建文件夹" Click="OnBackgroundMenuNewFolderClicked" />
                             <MenuFlyoutItem Text="粘贴" Click="OnBackgroundMenuPasteClicked" />
                             <MenuFlyoutItem Text="刷新" Click="OnBackgroundMenuRefreshClicked" />
+                            <MenuFlyoutItem Text="在资源管理器中打开当前文件夹" Click="OnBackgroundMenuOpenInExplorerClicked" />
                             <MenuFlyoutSeparator />
                             <MenuFlyoutItem Text="全选" Click="OnSelectAllClicked" />
                             <MenuFlyoutItem Text="复制当前文件夹路径" Click="OnBackgroundMenuCopyPathClicked" />
@@ -384,11 +386,14 @@
                                         RightTapped="OnItemRightTapped"
                                         DragOver="OnContentFolderDragOver"
                                         DragLeave="OnFolderDragLeave"
-                                        Drop="OnContentFolderDrop">
+                                        Drop="OnContentFolderDrop"
+                                        ToolTipService.ToolTip="{x:Bind Name}"
+                                        AutomationProperties.Name="{x:Bind Name}">
                                     <Border.ContextFlyout>
                                         <MenuFlyout>
                                             <MenuFlyoutItem Text="打开" Tag="{x:Bind FullPath}" Click="OnItemMenuOpenClicked" />
                                             <MenuFlyoutItem Text="快速预览" Tag="{x:Bind FullPath}" Click="OnItemMenuPreviewClicked" />
+                                            <MenuFlyoutItem Text="在资源管理器中打开" Tag="{x:Bind FullPath}" Click="OnItemMenuOpenInExplorerClicked" />
                                             <MenuFlyoutItem Text="重命名" Tag="{x:Bind FullPath}" Click="OnItemMenuRenameClicked" />
                                             <MenuFlyoutSeparator />
                                             <MenuFlyoutItem Text="复制" Tag="{x:Bind FullPath}" Click="OnItemMenuCopyClicked" />
@@ -407,29 +412,50 @@
                                         <Border Background="{StaticResource HubCanvasBrush}" CornerRadius="7,7,0,0">
                                             <Grid>
                                                 <Image Source="{x:Bind Thumbnail, Mode=OneWay}" Visibility="{x:Bind ThumbnailVisibility, Mode=OneWay}" Stretch="UniformToFill" />
-                                                <Grid Width="74"
-                                                      Height="68"
+                                                <Grid Width="104"
+                                                      Height="90"
                                                       Visibility="{x:Bind IconVisibility, Mode=OneWay}"
                                                       AutomationProperties.Name="{x:Bind IconDescription}"
                                                       IsHitTestVisible="False">
-                                                    <FontIcon Glyph="{x:Bind IconGlyph}" FontSize="42" Foreground="{StaticResource HubTextMutedBrush}" />
-                                                    <Border Margin="0,0,0,1"
-                                                            Style="{StaticResource HubFileTypeBadgeStyle}"
+                                                    <FontIcon Glyph="{x:Bind IconGlyph}"
+                                                              FontFamily="{StaticResource SymbolThemeFontFamily}"
+                                                              FontSize="64"
+                                                              Foreground="{x:Bind IconBrush}"
+                                                              HorizontalAlignment="Center"
+                                                              VerticalAlignment="Center" />
+                                                    <Border Style="{StaticResource HubFileTypeBadgeStyle}"
+                                                            Margin="0,0,2,2"
+                                                            BorderBrush="{x:Bind IconBrush}"
+                                                            HorizontalAlignment="Right"
+                                                            VerticalAlignment="Bottom"
                                                             Visibility="{x:Bind IconBadgeVisibility}">
-                                                        <TextBlock Text="{x:Bind IconBadgeText}" Style="{StaticResource HubFileTypeBadgeTextStyle}" />
+                                                        <TextBlock Text="{x:Bind IconBadgeText}"
+                                                                   Foreground="{x:Bind IconBrush}"
+                                                                   Style="{StaticResource HubFileTypeBadgeTextStyle}" />
                                                     </Border>
                                                 </Grid>
                                             </Grid>
                                         </Border>
                                         <Grid Grid.Row="1" Padding="9,6">
                                             <Grid.RowDefinitions>
-                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="36" />
                                                 <RowDefinition Height="Auto" />
                                                 <RowDefinition Height="Auto" />
                                                 <RowDefinition Height="Auto" />
                                             </Grid.RowDefinitions>
                                             <Grid>
-                                                <TextBlock Text="{x:Bind Name}" Visibility="{x:Bind NameVisibility, Mode=OneWay}" FontSize="12" Foreground="{StaticResource HubTextBrush}" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Text="{x:Bind Name}"
+                                                           Visibility="{x:Bind NameVisibility, Mode=OneWay}"
+                                                           Height="36"
+                                                           VerticalAlignment="Top"
+                                                           FontSize="12"
+                                                           LineHeight="17"
+                                                           TextLineBounds="Full"
+                                                           MaxLines="2"
+                                                           Foreground="{StaticResource HubTextBrush}"
+                                                           TextWrapping="Wrap"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           ToolTipService.ToolTip="{x:Bind Name}" />
                                                 <TextBox x:Name="RenameBox"
                                                          Text="{x:Bind RenameText, Mode=TwoWay}"
                                                          Visibility="{x:Bind RenameVisibility, Mode=OneWay}"
@@ -460,6 +486,25 @@
                                                 <TextBlock Text="{x:Bind SizeText}" FontSize="10" Foreground="{StaticResource HubTextMutedBrush}" HorizontalAlignment="Right" />
                                             </Grid>
                                         </Grid>
+                                        <Border Grid.RowSpan="2"
+                                                BorderBrush="{StaticResource HubAccentStrongBrush}"
+                                                BorderThickness="2"
+                                                CornerRadius="8"
+                                                Visibility="{x:Bind SelectionVisibility, Mode=OneWay}"
+                                                IsHitTestVisible="False" />
+                                        <Border Width="22"
+                                                Height="22"
+                                                Margin="8"
+                                                HorizontalAlignment="Right"
+                                                VerticalAlignment="Top"
+                                                Background="{StaticResource HubAccentStrongBrush}"
+                                                CornerRadius="11"
+                                                Visibility="{x:Bind SelectionVisibility, Mode=OneWay}"
+                                                IsHitTestVisible="False">
+                                            <FontIcon Glyph="&#xE73E;"
+                                                      FontSize="11"
+                                                      Foreground="{StaticResource HubCanvasBrush}" />
+                                        </Border>
                                     </Grid>
                                 </Border>
                             </DataTemplate>
@@ -493,16 +538,20 @@
                         </ListView.Header>
                         <ListView.ItemTemplate>
                             <DataTemplate x:DataType="viewModels:ExplorerItemViewModel">
-                                <Grid Background="Transparent"
+                                    <Grid Background="Transparent"
+                                      MinHeight="34"
                                       AllowDrop="{x:Bind IsDirectory}"
                                       RightTapped="OnItemRightTapped"
                                       DragOver="OnContentFolderDragOver"
                                       DragLeave="OnFolderDragLeave"
-                                      Drop="OnContentFolderDrop">
+                                      Drop="OnContentFolderDrop"
+                                      ToolTipService.ToolTip="{x:Bind Name}"
+                                      AutomationProperties.Name="{x:Bind Name}">
                                     <Grid.ContextFlyout>
                                         <MenuFlyout>
                                             <MenuFlyoutItem Text="打开" Tag="{x:Bind FullPath}" Click="OnItemMenuOpenClicked" />
                                             <MenuFlyoutItem Text="快速预览" Tag="{x:Bind FullPath}" Click="OnItemMenuPreviewClicked" />
+                                            <MenuFlyoutItem Text="在资源管理器中打开" Tag="{x:Bind FullPath}" Click="OnItemMenuOpenInExplorerClicked" />
                                             <MenuFlyoutItem Text="重命名" Tag="{x:Bind FullPath}" Click="OnItemMenuRenameClicked" />
                                             <MenuFlyoutSeparator />
                                             <MenuFlyoutItem Text="复制" Tag="{x:Bind FullPath}" Click="OnItemMenuCopyClicked" />
@@ -519,12 +568,12 @@
                                         <ColumnDefinition Width="150" />
                                         <ColumnDefinition Width="86" />
                                     </Grid.ColumnDefinitions>
-                                    <Grid>
+                                    <Grid VerticalAlignment="Center">
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="42" />
+                                            <ColumnDefinition Width="40" />
                                             <ColumnDefinition Width="*" />
                                         </Grid.ColumnDefinitions>
-                                        <Grid Width="34" Height="30" VerticalAlignment="Center" IsHitTestVisible="False">
+                                        <Grid Width="30" Height="30" VerticalAlignment="Center" IsHitTestVisible="False">
                                             <Image Source="{x:Bind Thumbnail, Mode=OneWay}"
                                                    Visibility="{x:Bind ThumbnailVisibility, Mode=OneWay}"
                                                    Width="28"
@@ -532,25 +581,23 @@
                                                    Stretch="UniformToFill" />
                                             <Grid Visibility="{x:Bind IconVisibility, Mode=OneWay}"
                                                   AutomationProperties.Name="{x:Bind IconDescription}">
-                                                <FontIcon Glyph="{x:Bind IconGlyph}" FontSize="21" Foreground="{StaticResource HubAccentBrush}" />
-                                                <Border MinWidth="19"
-                                                        Height="11"
-                                                        Padding="2,0"
-                                                        Margin="0,0,0,-1"
-                                                        Style="{StaticResource HubFileTypeBadgeStyle}"
-                                                        Visibility="{x:Bind IconBadgeVisibility}">
-                                                    <TextBlock Text="{x:Bind IconBadgeText}"
-                                                               FontSize="6.5"
-                                                               Style="{StaticResource HubFileTypeBadgeTextStyle}" />
-                                                </Border>
+                                                <FontIcon Glyph="{x:Bind IconGlyph}"
+                                                          FontFamily="{StaticResource SymbolThemeFontFamily}"
+                                                          FontSize="24"
+                                                          Foreground="{x:Bind IconBrush}"
+                                                          HorizontalAlignment="Center"
+                                                          VerticalAlignment="Center" />
                                             </Grid>
                                         </Grid>
-                                        <Grid Grid.Column="1">
+                                        <Grid Grid.Column="1" VerticalAlignment="Center">
                                             <Grid.RowDefinitions>
                                                 <RowDefinition Height="Auto" />
                                                 <RowDefinition Height="Auto" />
                                             </Grid.RowDefinitions>
-                                            <TextBlock Text="{x:Bind Name}" Visibility="{x:Bind NameVisibility, Mode=OneWay}" Foreground="{StaticResource HubTextBrush}" TextTrimming="CharacterEllipsis" Style="{StaticResource HubInlineLabelStyle}" />
+                                            <TextBlock Text="{x:Bind Name}"
+                                                       Visibility="{x:Bind NameVisibility, Mode=OneWay}"
+                                                       Foreground="{StaticResource HubTextBrush}"
+                                                       Style="{StaticResource HubFileListCellTextStyle}" />
                                             <TextBlock Grid.Row="1" Text="{x:Bind LocationText}" Visibility="{x:Bind LocationVisibility}" FontSize="10" Foreground="{StaticResource HubTextMutedBrush}" TextTrimming="CharacterEllipsis" />
                                             <TextBox x:Name="RenameBox"
                                                      Text="{x:Bind RenameText, Mode=TwoWay}"
@@ -570,9 +617,15 @@
                                                    Foreground="{StaticResource HubDangerBrush}"
                                                    TextTrimming="CharacterEllipsis" />
                                     </Grid>
-                                    <TextBlock Grid.Column="1" Text="{x:Bind DisplayType}" Foreground="{StaticResource HubTextSecondaryBrush}" />
-                                    <TextBlock Grid.Column="2" Text="{x:Bind ModifiedText}" Foreground="{StaticResource HubTextSecondaryBrush}" />
-                                    <TextBlock Grid.Column="3" Text="{x:Bind SizeText}" Foreground="{StaticResource HubTextSecondaryBrush}" HorizontalAlignment="Right" />
+                                    <TextBlock Grid.Column="1" Text="{x:Bind DisplayType}" Foreground="{StaticResource HubTextSecondaryBrush}" Style="{StaticResource HubFileListCellTextStyle}" />
+                                    <TextBlock Grid.Column="2" Text="{x:Bind ModifiedText}" Foreground="{StaticResource HubTextSecondaryBrush}" Style="{StaticResource HubFileListCellTextStyle}" />
+                                    <TextBlock Grid.Column="3" Text="{x:Bind SizeText}" Foreground="{StaticResource HubTextSecondaryBrush}" HorizontalAlignment="Right" Style="{StaticResource HubFileListCellTextStyle}" />
+                                    <Border Grid.ColumnSpan="4"
+                                            BorderBrush="{StaticResource HubAccentStrongBrush}"
+                                            BorderThickness="2"
+                                            CornerRadius="6"
+                                            Visibility="{x:Bind SelectionVisibility, Mode=OneWay}"
+                                            IsHitTestVisible="False" />
                                 </Grid>
                             </DataTemplate>
                         </ListView.ItemTemplate>
@@ -630,7 +683,7 @@
                     <RowDefinition Height="*" />
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
-                <TextBlock Text="详细信息" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource HubTextBrush}" VerticalAlignment="Center" />
+                <TextBlock Text="详细信息" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource HubTextBrush}" VerticalAlignment="Center" IsTextSelectionEnabled="True" />
                 <Border Grid.Row="1" Height="154" Background="{StaticResource HubCanvasBrush}" BorderBrush="{StaticResource HubBorderBrush}" BorderThickness="1" CornerRadius="8">
                     <Grid MinHeight="22">
                         <Image x:Name="InspectorImage" Stretch="UniformToFill" Visibility="Collapsed" />
@@ -638,24 +691,24 @@
                     </Grid>
                 </Border>
                 <StackPanel Grid.Row="2" Margin="0,16,0,0" Spacing="13">
-                    <TextBlock x:Name="InspectorName" Text="未选择文件" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource HubTextBrush}" TextWrapping="Wrap" />
+                    <TextBlock x:Name="InspectorName" Text="未选择文件" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource HubTextBrush}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
                     <Grid>
                         <Grid.ColumnDefinitions><ColumnDefinition Width="80" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                        <TextBlock Text="类型" Foreground="{StaticResource HubTextMutedBrush}" Style="{StaticResource HubInlineLabelStyle}" />
-                        <TextBlock x:Name="InspectorType" Grid.Column="1" Text="—" Foreground="{StaticResource HubTextSecondaryBrush}" HorizontalAlignment="Right" Style="{StaticResource HubInlineLabelStyle}" />
+                        <TextBlock Text="类型" Foreground="{StaticResource HubTextMutedBrush}" Style="{StaticResource HubInlineLabelStyle}" IsTextSelectionEnabled="True" />
+                        <TextBlock x:Name="InspectorType" Grid.Column="1" Text="—" Foreground="{StaticResource HubTextSecondaryBrush}" HorizontalAlignment="Right" Style="{StaticResource HubInlineLabelStyle}" IsTextSelectionEnabled="True" />
                     </Grid>
                     <Grid MinHeight="22">
                         <Grid.ColumnDefinitions><ColumnDefinition Width="80" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                        <TextBlock Text="大小" Foreground="{StaticResource HubTextMutedBrush}" Style="{StaticResource HubInlineLabelStyle}" />
-                        <TextBlock x:Name="InspectorSize" Grid.Column="1" Text="—" Foreground="{StaticResource HubTextSecondaryBrush}" HorizontalAlignment="Right" Style="{StaticResource HubInlineLabelStyle}" />
+                        <TextBlock Text="大小" Foreground="{StaticResource HubTextMutedBrush}" Style="{StaticResource HubInlineLabelStyle}" IsTextSelectionEnabled="True" />
+                        <TextBlock x:Name="InspectorSize" Grid.Column="1" Text="—" Foreground="{StaticResource HubTextSecondaryBrush}" HorizontalAlignment="Right" Style="{StaticResource HubInlineLabelStyle}" IsTextSelectionEnabled="True" />
                     </Grid>
                     <Grid MinHeight="22">
                         <Grid.ColumnDefinitions><ColumnDefinition Width="80" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                        <TextBlock Text="修改时间" Foreground="{StaticResource HubTextMutedBrush}" Style="{StaticResource HubInlineLabelStyle}" />
-                        <TextBlock x:Name="InspectorModified" Grid.Column="1" Text="—" Foreground="{StaticResource HubTextSecondaryBrush}" HorizontalAlignment="Right" Style="{StaticResource HubInlineLabelStyle}" />
+                        <TextBlock Text="修改时间" Foreground="{StaticResource HubTextMutedBrush}" Style="{StaticResource HubInlineLabelStyle}" IsTextSelectionEnabled="True" />
+                        <TextBlock x:Name="InspectorModified" Grid.Column="1" Text="—" Foreground="{StaticResource HubTextSecondaryBrush}" HorizontalAlignment="Right" Style="{StaticResource HubInlineLabelStyle}" IsTextSelectionEnabled="True" />
                     </Grid>
-                    <TextBlock Text="路径" Foreground="{StaticResource HubTextMutedBrush}" />
-                    <TextBlock x:Name="InspectorPath" Text="—" Foreground="{StaticResource HubTextSecondaryBrush}" TextWrapping="Wrap" />
+                    <TextBlock Text="路径" Foreground="{StaticResource HubTextMutedBrush}" IsTextSelectionEnabled="True" />
+                    <TextBlock x:Name="InspectorPath" Text="—" Foreground="{StaticResource HubTextSecondaryBrush}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
                 </StackPanel>
                 <StackPanel Grid.Row="3" Spacing="8">
                     <Button Style="{StaticResource HubToolbarButtonStyle}" HorizontalAlignment="Stretch" Click="OnOpenSelectedClicked">
@@ -764,14 +817,16 @@
                                         <TextBlock Text="Sublime Text 2 · Monokai"
                                                    FontSize="11"
                                                    FontWeight="SemiBold"
-                                                   Foreground="#FFF8F8F2" />
+                                                   Foreground="#FFF8F8F2"
+                                                   IsTextSelectionEnabled="True" />
                                     </StackPanel>
                                     <TextBlock x:Name="PreviewCodeLanguage"
                                                Grid.Column="1"
                                                VerticalAlignment="Center"
                                                FontFamily="Cascadia Mono, Consolas"
                                                FontSize="10"
-                                               Foreground="#FF75715E" />
+                                               Foreground="#FF75715E"
+                                               IsTextSelectionEnabled="True" />
                                 </Grid>
                                 <ScrollViewer x:Name="PreviewCodeScroll"
                                               Grid.Row="1"
@@ -826,7 +881,7 @@
                         </ScrollViewer>
                         <StackPanel x:Name="PreviewFallback" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12">
                             <FontIcon x:Name="PreviewFallbackIcon" Glyph="&#xE7C3;" FontSize="48" Foreground="{StaticResource HubTextMutedBrush}" />
-                            <TextBlock x:Name="PreviewFallbackText" Text="当前类型暂不支持内置预览" Foreground="{StaticResource HubTextSecondaryBrush}" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="460" />
+                            <TextBlock x:Name="PreviewFallbackText" Text="当前类型暂不支持内置预览" Foreground="{StaticResource HubTextSecondaryBrush}" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="460" IsTextSelectionEnabled="True" />
                         </StackPanel>
                         <Button x:Name="PreviewPreviousButton"
                                 Width="48"
@@ -886,10 +941,10 @@
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <TextBlock x:Name="PreviewTitle" Margin="16,0,10,0" MaxWidth="220" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="{StaticResource HubTextBrush}" TextTrimming="CharacterEllipsis" />
-                        <TextBlock x:Name="PreviewType" Grid.Column="1" Margin="6,0" VerticalAlignment="Center" Foreground="{StaticResource HubTextSecondaryBrush}" />
-                        <TextBlock x:Name="PreviewSize" Grid.Column="2" Margin="8,0" VerticalAlignment="Center" Foreground="{StaticResource HubTextSecondaryBrush}" />
-                        <TextBlock x:Name="PreviewPath" Grid.Column="3" Margin="18,0" VerticalAlignment="Center" Foreground="{StaticResource HubTextMutedBrush}" TextTrimming="CharacterEllipsis" />
+                        <TextBlock x:Name="PreviewTitle" Margin="16,0,10,0" MaxWidth="220" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="{StaticResource HubTextBrush}" TextTrimming="CharacterEllipsis" IsTextSelectionEnabled="True" />
+                        <TextBlock x:Name="PreviewType" Grid.Column="1" Margin="6,0" VerticalAlignment="Center" Foreground="{StaticResource HubTextSecondaryBrush}" IsTextSelectionEnabled="True" />
+                        <TextBlock x:Name="PreviewSize" Grid.Column="2" Margin="8,0" VerticalAlignment="Center" Foreground="{StaticResource HubTextSecondaryBrush}" IsTextSelectionEnabled="True" />
+                        <TextBlock x:Name="PreviewPath" Grid.Column="3" Margin="18,0" VerticalAlignment="Center" Foreground="{StaticResource HubTextMutedBrush}" TextTrimming="CharacterEllipsis" IsTextSelectionEnabled="True" />
                         <ToggleButton x:Name="PreviewWrapButton"
                                       Grid.Column="4"
                                       Margin="6,8"
@@ -930,11 +985,15 @@
                                                   Visibility="{x:Bind IconVisibility, Mode=OneWay}"
                                                   AutomationProperties.Name="{x:Bind IconDescription}"
                                                   IsHitTestVisible="False">
-                                                <FontIcon Glyph="{x:Bind IconGlyph}" FontSize="30" Foreground="{StaticResource HubTextMutedBrush}" />
+                                                <FontIcon Glyph="{x:Bind IconGlyph}"
+                                                          FontFamily="{StaticResource SymbolThemeFontFamily}"
+                                                          FontSize="32"
+                                                          Foreground="{x:Bind IconBrush}" />
                                                 <Border Margin="0,0,0,1"
                                                         Style="{StaticResource HubFileTypeBadgeStyle}"
+                                                        BorderBrush="{x:Bind IconBrush}"
                                                         Visibility="{x:Bind IconBadgeVisibility}">
-                                                    <TextBlock Text="{x:Bind IconBadgeText}" Style="{StaticResource HubFileTypeBadgeTextStyle}" />
+                                                    <TextBlock Text="{x:Bind IconBadgeText}" Foreground="{x:Bind IconBrush}" Style="{StaticResource HubFileTypeBadgeTextStyle}" />
                                                 </Border>
                                             </Grid>
                                         </Grid>

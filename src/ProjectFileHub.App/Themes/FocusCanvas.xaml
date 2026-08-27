@@ -16,6 +16,26 @@
     <Color x:Key="HubDangerColor">#FFEF6A75</Color>
     <Color x:Key="HubSuccessColor">#FF45C49A</Color>
 
+    <!-- Semantic file accents supplement the glyph and extension label; color is never the only cue. -->
+    <Color x:Key="HubFileFolderColor">#FF19B5FE</Color>
+    <Color x:Key="HubFileImageColor">#FF2DD4BF</Color>
+    <Color x:Key="HubFileVideoColor">#FFA78BFA</Color>
+    <Color x:Key="HubFileAudioColor">#FFF472B6</Color>
+    <Color x:Key="HubFilePdfColor">#FFFF707A</Color>
+    <Color x:Key="HubFileWordColor">#FF60A5FA</Color>
+    <Color x:Key="HubFileSpreadsheetColor">#FF45C49A</Color>
+    <Color x:Key="HubFilePresentationColor">#FFF5A45D</Color>
+    <Color x:Key="HubFileMarkdownColor">#FF56C2FF</Color>
+    <Color x:Key="HubFileTextColor">#FFA7B3C3</Color>
+    <Color x:Key="HubFileCodeColor">#FFE4C66F</Color>
+    <Color x:Key="HubFileDataColor">#FF4DD8D0</Color>
+    <Color x:Key="HubFileDatabaseColor">#FFB99AFD</Color>
+    <Color x:Key="HubFileArchiveColor">#FFF4B860</Color>
+    <Color x:Key="HubFileExecutableColor">#FF74C0FC</Color>
+    <Color x:Key="HubFileFontColor">#FFF09AB3</Color>
+    <Color x:Key="HubFileDocumentColor">#FF94A3B8</Color>
+    <Color x:Key="HubFileOtherColor">#FF708096</Color>
+
     <SolidColorBrush x:Key="HubCanvasBrush" Color="{StaticResource HubCanvasColor}" />
     <SolidColorBrush x:Key="HubPanelBrush" Color="{StaticResource HubPanelColor}" />
     <SolidColorBrush x:Key="HubRaisedBrush" Color="{StaticResource HubRaisedColor}" />
@@ -29,6 +49,24 @@
     <SolidColorBrush x:Key="HubBorderBrush" Color="{StaticResource HubBorderColor}" />
     <SolidColorBrush x:Key="HubDangerBrush" Color="{StaticResource HubDangerColor}" />
     <SolidColorBrush x:Key="HubSuccessBrush" Color="{StaticResource HubSuccessColor}" />
+    <SolidColorBrush x:Key="HubFileFolderBrush" Color="{StaticResource HubFileFolderColor}" />
+    <SolidColorBrush x:Key="HubFileImageBrush" Color="{StaticResource HubFileImageColor}" />
+    <SolidColorBrush x:Key="HubFileVideoBrush" Color="{StaticResource HubFileVideoColor}" />
+    <SolidColorBrush x:Key="HubFileAudioBrush" Color="{StaticResource HubFileAudioColor}" />
+    <SolidColorBrush x:Key="HubFilePdfBrush" Color="{StaticResource HubFilePdfColor}" />
+    <SolidColorBrush x:Key="HubFileWordBrush" Color="{StaticResource HubFileWordColor}" />
+    <SolidColorBrush x:Key="HubFileSpreadsheetBrush" Color="{StaticResource HubFileSpreadsheetColor}" />
+    <SolidColorBrush x:Key="HubFilePresentationBrush" Color="{StaticResource HubFilePresentationColor}" />
+    <SolidColorBrush x:Key="HubFileMarkdownBrush" Color="{StaticResource HubFileMarkdownColor}" />
+    <SolidColorBrush x:Key="HubFileTextBrush" Color="{StaticResource HubFileTextColor}" />
+    <SolidColorBrush x:Key="HubFileCodeBrush" Color="{StaticResource HubFileCodeColor}" />
+    <SolidColorBrush x:Key="HubFileDataBrush" Color="{StaticResource HubFileDataColor}" />
+    <SolidColorBrush x:Key="HubFileDatabaseBrush" Color="{StaticResource HubFileDatabaseColor}" />
+    <SolidColorBrush x:Key="HubFileArchiveBrush" Color="{StaticResource HubFileArchiveColor}" />
+    <SolidColorBrush x:Key="HubFileExecutableBrush" Color="{StaticResource HubFileExecutableColor}" />
+    <SolidColorBrush x:Key="HubFileFontBrush" Color="{StaticResource HubFileFontColor}" />
+    <SolidColorBrush x:Key="HubFileDocumentBrush" Color="{StaticResource HubFileDocumentColor}" />
+    <SolidColorBrush x:Key="HubFileOtherBrush" Color="{StaticResource HubFileOtherColor}" />
 
     <!-- Keep pointer, selection, and keyboard-focus feedback inside the Focus Canvas palette. -->
     <StaticResource x:Key="GridViewItemBackgroundPointerOver" ResourceKey="HubHoverBrush" />
@@ -113,19 +151,19 @@
     </Style>
 
     <Style x:Key="HubFileTypeBadgeStyle" TargetType="Border">
-        <Setter Property="MinWidth" Value="25" />
-        <Setter Property="Height" Value="17" />
-        <Setter Property="Padding" Value="4,0" />
+        <Setter Property="MinWidth" Value="38" />
+        <Setter Property="Height" Value="23" />
+        <Setter Property="Padding" Value="8,0" />
         <Setter Property="Background" Value="{StaticResource HubRaisedBrush}" />
         <Setter Property="BorderBrush" Value="{StaticResource HubAccentBrush}" />
         <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="CornerRadius" Value="4" />
+        <Setter Property="CornerRadius" Value="6" />
         <Setter Property="HorizontalAlignment" Value="Center" />
         <Setter Property="VerticalAlignment" Value="Bottom" />
     </Style>
 
     <Style x:Key="HubFileTypeBadgeTextStyle" TargetType="TextBlock">
-        <Setter Property="FontSize" Value="8" />
+        <Setter Property="FontSize" Value="11" />
         <Setter Property="FontWeight" Value="SemiBold" />
         <Setter Property="Foreground" Value="{StaticResource HubAccentStrongBrush}" />
         <Setter Property="HorizontalAlignment" Value="Center" />
@@ -272,5 +310,11 @@
         <Setter Property="VerticalAlignment" Value="Center" />
         <Setter Property="LineHeight" Value="18" />
         <Setter Property="TextLineBounds" Value="Full" />
+    </Style>
+
+    <Style x:Key="HubFileListCellTextStyle" TargetType="TextBlock" BasedOn="{StaticResource HubInlineLabelStyle}">
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        <Setter Property="MaxLines" Value="1" />
     </Style>
 </ResourceDictionary>

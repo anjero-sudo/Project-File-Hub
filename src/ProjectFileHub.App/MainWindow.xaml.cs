@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Text.RegularExpressions;
 using Microsoft.UI;
 using Microsoft.UI.Input;
@@ -448,7 +449,54 @@ public sealed partial class MainWindow : Window
             SetBrushColor("HubSuccessBrush", 0x45, 0xC4, 0x9A);
         }
 
+        ApplyFileVisualTheme(light);
+
         ApplyTitleBarTheme(light);
+    }
+
+    private static void ApplyFileVisualTheme(bool light)
+    {
+        if (light)
+        {
+            SetBrushColor("HubFileFolderBrush", 0x03, 0x67, 0x8F);
+            SetBrushColor("HubFileImageBrush", 0x0F, 0x76, 0x6E);
+            SetBrushColor("HubFileVideoBrush", 0x5B, 0x4B, 0xC0);
+            SetBrushColor("HubFileAudioBrush", 0xB8, 0x32, 0x80);
+            SetBrushColor("HubFilePdfBrush", 0xB8, 0x32, 0x3D);
+            SetBrushColor("HubFileWordBrush", 0x1D, 0x4E, 0xD8);
+            SetBrushColor("HubFileSpreadsheetBrush", 0x0F, 0x76, 0x6E);
+            SetBrushColor("HubFilePresentationBrush", 0x9A, 0x45, 0x07);
+            SetBrushColor("HubFileMarkdownBrush", 0x03, 0x69, 0xA1);
+            SetBrushColor("HubFileTextBrush", 0x52, 0x62, 0x78);
+            SetBrushColor("HubFileCodeBrush", 0x8A, 0x5B, 0x00);
+            SetBrushColor("HubFileDataBrush", 0x0F, 0x76, 0x6E);
+            SetBrushColor("HubFileDatabaseBrush", 0x7C, 0x3A, 0xED);
+            SetBrushColor("HubFileArchiveBrush", 0x8A, 0x52, 0x06);
+            SetBrushColor("HubFileExecutableBrush", 0x1D, 0x4E, 0xD8);
+            SetBrushColor("HubFileFontBrush", 0xBE, 0x18, 0x5D);
+            SetBrushColor("HubFileDocumentBrush", 0x47, 0x55, 0x69);
+            SetBrushColor("HubFileOtherBrush", 0x5B, 0x6B, 0x80);
+            return;
+        }
+
+        SetBrushColor("HubFileFolderBrush", 0x19, 0xB5, 0xFE);
+        SetBrushColor("HubFileImageBrush", 0x2D, 0xD4, 0xBF);
+        SetBrushColor("HubFileVideoBrush", 0xA7, 0x8B, 0xFA);
+        SetBrushColor("HubFileAudioBrush", 0xF4, 0x72, 0xB6);
+        SetBrushColor("HubFilePdfBrush", 0xFF, 0x70, 0x7A);
+        SetBrushColor("HubFileWordBrush", 0x60, 0xA5, 0xFA);
+        SetBrushColor("HubFileSpreadsheetBrush", 0x45, 0xC4, 0x9A);
+        SetBrushColor("HubFilePresentationBrush", 0xF5, 0xA4, 0x5D);
+        SetBrushColor("HubFileMarkdownBrush", 0x56, 0xC2, 0xFF);
+        SetBrushColor("HubFileTextBrush", 0xA7, 0xB3, 0xC3);
+        SetBrushColor("HubFileCodeBrush", 0xE4, 0xC6, 0x6F);
+        SetBrushColor("HubFileDataBrush", 0x4D, 0xD8, 0xD0);
+        SetBrushColor("HubFileDatabaseBrush", 0xB9, 0x9A, 0xFD);
+        SetBrushColor("HubFileArchiveBrush", 0xF4, 0xB8, 0x60);
+        SetBrushColor("HubFileExecutableBrush", 0x74, 0xC0, 0xFC);
+        SetBrushColor("HubFileFontBrush", 0xF0, 0x9A, 0xB3);
+        SetBrushColor("HubFileDocumentBrush", 0x94, 0xA3, 0xB8);
+        SetBrushColor("HubFileOtherBrush", 0x70, 0x80, 0x96);
     }
 
     private static void SetBrushColor(string resourceKey, byte red, byte green, byte blue)
@@ -977,6 +1025,14 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    private void OnTreeMenuOpenInExplorerClicked(object sender, RoutedEventArgs e)
+    {
+        if (sender is MenuFlyoutItem { Tag: string path })
+        {
+            OpenInFileExplorer(path);
+        }
+    }
+
     private void OnTreeMenuRenameClicked(object sender, RoutedEventArgs e)
     {
         if (_activeProject is null || sender is not MenuFlyoutItem { Tag: string path })
@@ -1042,6 +1098,14 @@ public sealed partial class MainWindow : Window
         if (_categoryFilter is null)
         {
             SetStatus("内容已刷新");
+        }
+    }
+
+    private void OnBackgroundMenuOpenInExplorerClicked(object sender, RoutedEventArgs e)
+    {
+        if (_currentFolder is not null)
+        {
+            OpenInFileExplorer(_currentFolder);
         }
     }
 
@@ -2058,7 +2122,9 @@ public sealed partial class MainWindow : Window
 
             _appWindow.Show(activateWindow: true);
             Activate();
-            AppDiagnostics.Log("Main window restored from notification area");
+            var windowHandle = WindowNative.GetWindowHandle(this);
+            var broughtToFront = WindowActivationService.BringToForeground(windowHandle);
+            AppDiagnostics.Log($"Main window restored from notification area · foreground={broughtToFront}");
             SetStatus("已从通知区域恢复");
         }
         finally
@@ -2333,6 +2399,8 @@ public sealed partial class MainWindow : Window
             _synchronizingSelection = false;
         }
 
+        UpdateItemSelectionStates(GetSelectedItems());
+
         MultiSelectLabel.Text = enabled ? "完成" : "多选";
         MultiSelectButton.Background = (Brush)Application.Current.Resources[
             enabled ? "HubSelectedBrush" : "HubRaisedBrush"];
@@ -2356,6 +2424,7 @@ public sealed partial class MainWindow : Window
         }
 
         ActiveFileView.SelectAll();
+        UpdateItemSelectionStates(GetSelectedItems());
         UpdateMultiSelectionUi();
     }
 
@@ -2373,6 +2442,7 @@ public sealed partial class MainWindow : Window
             _synchronizingSelection = false;
         }
 
+        UpdateItemSelectionStates([]);
         UpdateInspector(null);
         UpdateMultiSelectionUi();
         SetStatus("已清除选择");
@@ -2389,6 +2459,7 @@ public sealed partial class MainWindow : Window
         var selected = source.SelectedItems.OfType<ExplorerItemViewModel>().ToArray();
         _selectedItem = source.SelectedItem as ExplorerItemViewModel ?? selected.LastOrDefault();
         ApplySelectionToView(ReferenceEquals(source, FileGrid) ? FileList : FileGrid, selected);
+        UpdateItemSelectionStates(selected);
         _synchronizingSelection = false;
         await UpdateInspectorAsync(_selectedItem);
         UpdateMultiSelectionUi();
@@ -2417,6 +2488,18 @@ public sealed partial class MainWindow : Window
         target.SelectedItem = _selectedItem is not null && Items.Contains(_selectedItem)
             ? _selectedItem
             : selected.FirstOrDefault();
+    }
+
+    private void UpdateItemSelectionStates(IEnumerable<ExplorerItemViewModel> selected)
+    {
+        var selectedPaths = selected
+            .Select(item => item.FullPath)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var item in Items)
+        {
+            item.IsSelected = selectedPaths.Contains(item.FullPath);
+        }
     }
 
     private void UpdateMultiSelectionUi()
@@ -2463,6 +2546,7 @@ public sealed partial class MainWindow : Window
         }
 
         _selectedItem = item;
+        UpdateItemSelectionStates(view.SelectedItems.OfType<ExplorerItemViewModel>());
         _ = UpdateInspectorAsync(item);
     }
 
@@ -2479,6 +2563,14 @@ public sealed partial class MainWindow : Window
         if (GetMenuItem(sender) is { } item)
         {
             await OpenPreviewAsync(item, PreviewMode.WorkspaceQuickPreview);
+        }
+    }
+
+    private void OnItemMenuOpenInExplorerClicked(object sender, RoutedEventArgs e)
+    {
+        if (GetMenuItem(sender) is { } item)
+        {
+            OpenInFileExplorer(item.FullPath);
         }
     }
 
@@ -2803,6 +2895,7 @@ public sealed partial class MainWindow : Window
         InspectorModified.Text = item.ModifiedText;
         InspectorPath.Text = item.FullPath;
         InspectorIcon.Glyph = item.IconGlyph;
+        InspectorIcon.Foreground = item.IconBrush;
         InspectorImage.Source = null;
         InspectorImage.Visibility = Visibility.Collapsed;
         InspectorIcon.Visibility = Visibility.Visible;
@@ -2846,6 +2939,52 @@ public sealed partial class MainWindow : Window
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
         {
             SetStatus($"无法打开：{exception.Message}");
+        }
+    }
+
+    private void OpenInFileExplorer(string path)
+    {
+        if (_activeProject is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var boundary = new PathBoundary(_activeProject.RootPath);
+            var safePath = boundary.EnsureSafe(path);
+            var isDirectory = Directory.Exists(safePath);
+            if (!isDirectory && !File.Exists(safePath))
+            {
+                throw new FileNotFoundException("文件或文件夹已经不存在。", safePath);
+            }
+
+            var arguments = isDirectory
+                ? $"\"{safePath}\""
+                : $"/select,\"{safePath}\"";
+            using var process = Process.Start(new ProcessStartInfo
+            {
+                FileName = "explorer.exe",
+                Arguments = arguments,
+                UseShellExecute = true
+            });
+
+            if (process is null)
+            {
+                throw new InvalidOperationException("Windows 资源管理器未能启动。");
+            }
+
+            SetStatus(isDirectory
+                ? $"已在资源管理器中打开：{Path.GetFileName(safePath)}"
+                : $"已在资源管理器中定位：{Path.GetFileName(safePath)}");
+        }
+        catch (Exception exception) when (exception is IOException
+            or UnauthorizedAccessException
+            or ArgumentException
+            or InvalidOperationException
+            or System.ComponentModel.Win32Exception)
+        {
+            SetStatus($"无法在资源管理器中打开：{exception.Message}");
         }
     }
 
@@ -3904,6 +4043,7 @@ public sealed partial class MainWindow : Window
     private void ShowPreviewFallback(ExplorerItemViewModel item, string message)
     {
         PreviewFallbackIcon.Glyph = item.IconGlyph;
+        PreviewFallbackIcon.Foreground = item.IconBrush;
         PreviewFallbackText.Text = message;
         PreviewFallback.Visibility = Visibility.Visible;
     }
