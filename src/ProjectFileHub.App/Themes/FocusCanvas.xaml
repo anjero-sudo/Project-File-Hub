@@ -1,6 +1,7 @@
 <ResourceDictionary
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:primitives="using:Microsoft.UI.Xaml.Controls.Primitives">
 
     <Color x:Key="HubCanvasColor">#FF07101B</Color>
     <Color x:Key="HubPanelColor">#FF0B1521</Color>
@@ -15,6 +16,7 @@
     <Color x:Key="HubBorderColor">#FF203044</Color>
     <Color x:Key="HubDangerColor">#FFEF6A75</Color>
     <Color x:Key="HubSuccessColor">#FF45C49A</Color>
+    <Color x:Key="HubOverlayColor">#A607101B</Color>
 
     <!-- Semantic file accents supplement the glyph and extension label; color is never the only cue. -->
     <Color x:Key="HubFileFolderColor">#FF19B5FE</Color>
@@ -25,7 +27,7 @@
     <Color x:Key="HubFileWordColor">#FF60A5FA</Color>
     <Color x:Key="HubFileSpreadsheetColor">#FF45C49A</Color>
     <Color x:Key="HubFilePresentationColor">#FFF5A45D</Color>
-    <Color x:Key="HubFileMarkdownColor">#FF56C2FF</Color>
+    <Color x:Key="HubFileMarkdownColor">#FF7AA2F7</Color>
     <Color x:Key="HubFileTextColor">#FFA7B3C3</Color>
     <Color x:Key="HubFileCodeColor">#FFE4C66F</Color>
     <Color x:Key="HubFileDataColor">#FF4DD8D0</Color>
@@ -49,6 +51,7 @@
     <SolidColorBrush x:Key="HubBorderBrush" Color="{StaticResource HubBorderColor}" />
     <SolidColorBrush x:Key="HubDangerBrush" Color="{StaticResource HubDangerColor}" />
     <SolidColorBrush x:Key="HubSuccessBrush" Color="{StaticResource HubSuccessColor}" />
+    <SolidColorBrush x:Key="HubOverlayBrush" Color="{StaticResource HubOverlayColor}" />
     <SolidColorBrush x:Key="HubFileFolderBrush" Color="{StaticResource HubFileFolderColor}" />
     <SolidColorBrush x:Key="HubFileImageBrush" Color="{StaticResource HubFileImageColor}" />
     <SolidColorBrush x:Key="HubFileVideoBrush" Color="{StaticResource HubFileVideoColor}" />
@@ -150,11 +153,11 @@
         <Setter Property="Padding" Value="16,12" />
     </Style>
 
-    <Style x:Key="HubFileTypeBadgeStyle" TargetType="Border">
-        <Setter Property="MinWidth" Value="38" />
-        <Setter Property="Height" Value="23" />
-        <Setter Property="Padding" Value="8,0" />
-        <Setter Property="Background" Value="{StaticResource HubRaisedBrush}" />
+    <Style x:Key="HubGridFileTypeBadgeStyle" TargetType="Border">
+        <Setter Property="MinWidth" Value="44" />
+        <Setter Property="Height" Value="30" />
+        <Setter Property="Padding" Value="7,0" />
+        <Setter Property="Background" Value="{StaticResource HubPanelBrush}" />
         <Setter Property="BorderBrush" Value="{StaticResource HubAccentBrush}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="CornerRadius" Value="6" />
@@ -162,13 +165,118 @@
         <Setter Property="VerticalAlignment" Value="Bottom" />
     </Style>
 
-    <Style x:Key="HubFileTypeBadgeTextStyle" TargetType="TextBlock">
-        <Setter Property="FontSize" Value="11" />
-        <Setter Property="FontWeight" Value="SemiBold" />
+    <Style x:Key="HubGridFileTypeBadgeTextStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="14" />
+        <Setter Property="FontWeight" Value="Bold" />
         <Setter Property="Foreground" Value="{StaticResource HubAccentStrongBrush}" />
         <Setter Property="HorizontalAlignment" Value="Center" />
         <Setter Property="VerticalAlignment" Value="Center" />
         <Setter Property="TextAlignment" Value="Center" />
+        <Setter Property="TextLineBounds" Value="Tight" />
+    </Style>
+
+    <Style x:Key="HubListFileTypeTileStyle" TargetType="Border">
+        <Setter Property="Width" Value="38" />
+        <Setter Property="Height" Value="26" />
+        <Setter Property="Padding" Value="5,3" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderBrush" Value="{StaticResource HubAccentBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="5" />
+        <Setter Property="HorizontalAlignment" Value="Left" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <Style x:Key="HubListFileTypeTileTextStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="16" />
+        <Setter Property="FontWeight" Value="Bold" />
+        <Setter Property="HorizontalAlignment" Value="Center" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="TextAlignment" Value="Center" />
+        <Setter Property="TextLineBounds" Value="Tight" />
+    </Style>
+
+    <Style x:Key="HubPaneSplitterStyle" TargetType="primitives:Thumb">
+        <Setter Property="IsTabStop" Value="True" />
+        <Setter Property="UseSystemFocusVisuals" Value="True" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="primitives:Thumb">
+                    <Grid Background="Transparent">
+                        <VisualStateManager.VisualStateGroups>
+                            <VisualStateGroup x:Name="CommonStates">
+                                <VisualState x:Name="Normal" />
+                                <VisualState x:Name="PointerOver">
+                                    <VisualState.Setters>
+                                        <Setter Target="SplitterRail.Fill" Value="{StaticResource HubAccentBrush}" />
+                                        <Setter Target="SplitterHandle.Background" Value="{StaticResource HubSelectedBrush}" />
+                                        <Setter Target="SplitterHandle.BorderBrush" Value="{StaticResource HubAccentBrush}" />
+                                        <Setter Target="GripTop.Fill" Value="{StaticResource HubAccentStrongBrush}" />
+                                        <Setter Target="GripMiddle.Fill" Value="{StaticResource HubAccentStrongBrush}" />
+                                        <Setter Target="GripBottom.Fill" Value="{StaticResource HubAccentStrongBrush}" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                                <VisualState x:Name="Pressed">
+                                    <VisualState.Setters>
+                                        <Setter Target="SplitterRail.Fill" Value="{StaticResource HubAccentStrongBrush}" />
+                                        <Setter Target="SplitterHandle.Background" Value="{StaticResource HubAccentBrush}" />
+                                        <Setter Target="SplitterHandle.BorderBrush" Value="{StaticResource HubAccentStrongBrush}" />
+                                        <Setter Target="GripTop.Fill" Value="{StaticResource HubCanvasBrush}" />
+                                        <Setter Target="GripMiddle.Fill" Value="{StaticResource HubCanvasBrush}" />
+                                        <Setter Target="GripBottom.Fill" Value="{StaticResource HubCanvasBrush}" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                                <VisualState x:Name="Disabled">
+                                    <VisualState.Setters>
+                                        <Setter Target="SplitterHandle.Opacity" Value="0.42" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                            </VisualStateGroup>
+                        </VisualStateManager.VisualStateGroups>
+                        <Rectangle x:Name="SplitterRail"
+                                   Width="1"
+                                   HorizontalAlignment="Center"
+                                   Fill="{StaticResource HubBorderBrush}" />
+                        <Border x:Name="SplitterHandle"
+                                Width="10"
+                                Height="38"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Background="{StaticResource HubRaisedBrush}"
+                                BorderBrush="{StaticResource HubBorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="5">
+                            <StackPanel Spacing="3" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <Rectangle x:Name="GripTop" Width="3" Height="2" RadiusX="1" RadiusY="1" Fill="{StaticResource HubTextMutedBrush}" />
+                                <Rectangle x:Name="GripMiddle" Width="3" Height="2" RadiusX="1" RadiusY="1" Fill="{StaticResource HubTextMutedBrush}" />
+                                <Rectangle x:Name="GripBottom" Width="3" Height="2" RadiusX="1" RadiusY="1" Fill="{StaticResource HubTextMutedBrush}" />
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="HubFilmstripFileTypeBadgeStyle" TargetType="Border">
+        <Setter Property="MinWidth" Value="30" />
+        <Setter Property="Height" Value="18" />
+        <Setter Property="Padding" Value="4,0" />
+        <Setter Property="Background" Value="{StaticResource HubPanelBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource HubAccentBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="4" />
+        <Setter Property="HorizontalAlignment" Value="Center" />
+        <Setter Property="VerticalAlignment" Value="Bottom" />
+    </Style>
+
+    <Style x:Key="HubFilmstripFileTypeBadgeTextStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="9" />
+        <Setter Property="FontWeight" Value="Bold" />
+        <Setter Property="HorizontalAlignment" Value="Center" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="TextAlignment" Value="Center" />
+        <Setter Property="TextLineBounds" Value="Tight" />
     </Style>
 
     <Style x:Key="HubRailHitButtonStyle" TargetType="Button" BasedOn="{StaticResource HubToolbarButtonStyle}">

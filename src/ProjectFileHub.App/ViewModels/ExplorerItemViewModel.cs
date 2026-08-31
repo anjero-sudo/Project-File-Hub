@@ -23,6 +23,7 @@ public sealed class ExplorerItemViewModel : INotifyPropertyChanged
         Item = item;
         VisualKind = FileVisualClassifier.Classify(item);
         IconBadgeText = FileVisualClassifier.GetBadge(item);
+        ListIconText = FileVisualClassifier.GetTypeMonogram(item);
         IconBrush = ResolveIconBrush(VisualKind);
         _renameText = item.Name;
         ShowProjectLocation = showProjectLocation && !string.IsNullOrWhiteSpace(projectRoot);
@@ -60,6 +61,8 @@ public sealed class ExplorerItemViewModel : INotifyPropertyChanged
 
     public string IconBadgeText { get; }
 
+    public string ListIconText { get; }
+
     public Visibility IconBadgeVisibility =>
         string.IsNullOrEmpty(IconBadgeText) ? Visibility.Collapsed : Visibility.Visible;
 
@@ -86,12 +89,20 @@ public sealed class ExplorerItemViewModel : INotifyPropertyChanged
             OnPropertyChanged();
             OnPropertyChanged(nameof(ThumbnailVisibility));
             OnPropertyChanged(nameof(IconVisibility));
+            OnPropertyChanged(nameof(ListFolderIconVisibility));
+            OnPropertyChanged(nameof(ListTypeIconVisibility));
         }
     }
 
     public Visibility ThumbnailVisibility => Thumbnail is null ? Visibility.Collapsed : Visibility.Visible;
 
     public Visibility IconVisibility => Thumbnail is null ? Visibility.Visible : Visibility.Collapsed;
+
+    public Visibility ListFolderIconVisibility =>
+        Thumbnail is null && IsDirectory ? Visibility.Visible : Visibility.Collapsed;
+
+    public Visibility ListTypeIconVisibility =>
+        Thumbnail is null && !IsDirectory ? Visibility.Visible : Visibility.Collapsed;
 
     public bool IsSelected
     {

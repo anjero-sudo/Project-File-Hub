@@ -1,0 +1,57 @@
+name: Publish Windows release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Install repository SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+
+      - name: Verify tag matches application version
+        shell: pwsh
+        run: |
+          [xml]$props = Get-Content -LiteralPath Directory.Build.props
+          $expectedTag = "v$($props.Project.PropertyGroup.Version)"
+          if ($env:GITHUB_REF_NAME -ne $expectedTag) {
+            throw "Tag $env:GITHUB_REF_NAME does not match Directory.Build.props version $expectedTag."
+          }
+
+      - name: Run core regression tests
+        shell: pwsh
+        run: ./eng/run-core-tests.ps1
+
+      - name: Build release configuration
+        shell: pwsh
+        run: ./eng/build.ps1 -Configuration Release
+
+      - name: Create portable Windows package
+        shell: pwsh
+        run: ./eng/package-release.ps1 -Configuration Release -Runtime win-x64
+
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = $env:GITHUB_REF_NAME.TrimStart('v')
+          gh release create $env:GITHUB_REF_NAME `
+            "artifacts/release/ProjectFileHub-$version-win-x64.zip" `
+            "artifacts/release/ProjectFileHub-$version-win-x64.zip.sha256" `
+            --verify-tag `
+            --generate-notes `
+            --title "Project File Hub $env:GITHUB_REF_NAME"

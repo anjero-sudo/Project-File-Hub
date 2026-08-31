@@ -23,6 +23,7 @@ AGENTS.md
 # Local design drafts; publish only the selected Focus Canvas preview
 design/reference/*
 !design/reference/focus-canvas-normal-browser-draft-v1.png
+/design-qa.md
 
 # Test and coverage outputs
 TestResults/

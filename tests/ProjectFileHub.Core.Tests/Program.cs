@@ -1,3 +1,5 @@
+using System.Net;
+using System.Text;
 using ProjectFileHub.Core;
 using ProjectFileHub.Core.Models;
 using ProjectFileHub.Core.Services;
@@ -16,6 +18,9 @@ var tests = new (string Name, Func<Task> Run)[]
     ("Transfer moves and copies only inside the project", TestTransfer),
     ("Batch copy preserves all selections and keep-both paste", TestBatchCopy),
     ("Markdown preview parses reading structure without resolving content", TestMarkdownPreviewParser),
+    ("Markdown HTML preview encodes source and exposes safe reading interactions", TestMarkdownHtmlRenderer),
+    ("Markdown project links resolve relative files without escaping the project", TestMarkdownProjectLinkResolver),
+    ("GitHub release checks compare versions without accepting untrusted links", TestGitHubReleaseUpdateService),
     ("Code preview tokenization preserves text and identifies Monokai token roles", TestCodePreviewTokenizer),
     ("Image preview zoom keeps the viewport center and clamps mouse panning", TestPreviewZoomMath),
     ("Transfer blocks self, subtree and nested selections", TestTransferGuards),
@@ -159,9 +164,13 @@ static Task TestFileVisuals()
     var database = Item("catalog.sqlite3", ".sqlite3", FileItemCategory.Other);
     var creative = Item("shot.prproj", ".prproj", FileItemCategory.Video);
     var designPackage = Item("layout.indd", ".indd", FileItemCategory.Other);
-    Assert(FileVisualClassifier.GetBadge(folder) == string.Empty
+    Assert(FileVisualClassifier.GetBadge(folder) == "DIR"
            && FileVisualClassifier.GetBadge(image) == string.Empty,
-        "Folders and image thumbnails must not receive extension badges.");
+        "Folders must have a dedicated badge while image thumbnails remain badge-free.");
+    Assert(FileVisualClassifier.GetTypeMonogram(image) == "PNG"
+           && FileVisualClassifier.GetTypeMonogram(markdown) == "MD"
+           && FileVisualClassifier.GetTypeMonogram(Item("LICENSE", string.Empty, FileItemCategory.Other)) == "FILE",
+        "List monograms must remain visible before thumbnails load and for extensionless files.");
     Assert(FileVisualClassifier.GetBadge(pdf) == "PDF"
            && FileVisualClassifier.GetBadge(word) == "DOCX"
            && FileVisualClassifier.GetBadge(sheet) == "XLSX"
@@ -325,10 +334,14 @@ static async Task TestAppSettingsStore()
         InspectorVisible = false,
         FilterRailVisible = true,
         RestoreWorkspace = true,
+        CheckForUpdatesOnStartup = true,
+        LastUpdateCheckUtc = new DateTimeOffset(2026, 8, 31, 8, 30, 0, TimeSpan.Zero),
         CloseToTrayEnabled = true,
         CloseToTrayConfigured = true,
         Theme = AppThemeNames.Graphite,
         Density = AppDensityNames.Compact,
+        TreePaneWidth = 318,
+        InspectorPaneWidth = 406,
         ProjectWorkspaces = new Dictionary<Guid, ProjectWorkspaceState>
         {
             [projectId] = new()
@@ -337,7 +350,8 @@ static async Task TestAppSettingsStore()
                 CategoryFilter = FileItemCategory.Image,
                 SortField = FileSortField.ModifiedAt,
                 SortDirection = SortDirection.Descending,
-                GridView = false
+                GridView = false,
+                IncludeSubfolders = true
             }
         }
     };
@@ -348,14 +362,20 @@ static async Task TestAppSettingsStore()
 
     Assert(!restored.SpacePreviewEnabled
            && !restored.InspectorVisible
+           && restored.CheckForUpdatesOnStartup
            && restored.CloseToTrayEnabled
            && restored.EffectiveCloseToTrayEnabled,
         "Application switches must survive a settings round trip.");
     Assert(restored.Theme == AppThemeNames.Graphite && restored.Density == AppDensityNames.Compact,
         "Theme and density must survive a settings round trip.");
+    Assert(restored.TreePaneWidth == 318
+           && restored.InspectorPaneWidth == 406
+           && restored.LastUpdateCheckUtc == state.LastUpdateCheckUtc,
+        "Update and resizable-pane preferences must survive a settings round trip.");
     Assert(restoredWorkspace?.CategoryFilter == FileItemCategory.Image
            && restoredWorkspace.SortDirection == SortDirection.Descending
-           && !restoredWorkspace.GridView,
+           && !restoredWorkspace.GridView
+           && restoredWorkspace.IncludeSubfolders,
         "Per-project folder, filter, sort, and view memory must survive a settings round trip.");
 
     await store.SaveAsync(state with { Theme = "Unknown", Density = "Unknown" });
@@ -505,6 +525,151 @@ static Task TestMarkdownPreviewParser()
                                && !block.Text.Contains("https://", StringComparison.OrdinalIgnoreCase)),
         "The parser must not introduce or resolve external content.");
     return Task.CompletedTask;
+}
+
+static Task TestMarkdownHtmlRenderer()
+{
+    const string markdown = """
+        # 项目标题
+
+        阅读 [项目文档](docs/readme.md)、[女主参考图](../人物图/女主%20正面.png) 和 [外部说明](https://example.com/help)。
+
+        <script>alert('untrusted')</script>
+
+        ```json
+        { "enabled": true }
+        ```
+
+        ```text
+        参考图：[代码块女主图](../人物图/代码块参考.png)
+        ```
+        """;
+
+    var html = MarkdownHtmlRenderer.Render(markdown);
+    Assert(html.Contains("Content-Security-Policy", StringComparison.Ordinal)
+           && html.Contains("default-src 'none'", StringComparison.Ordinal),
+        "The reading surface must block remote resources by default.");
+    Assert(html.Contains("data-pfh-href=\"docs/readme.md\"", StringComparison.Ordinal)
+           && html.Contains("data-pfh-href=\"../人物图/女主%20正面.png\"", StringComparison.Ordinal)
+           && !html.Contains("<a href=\"https://example.com/help\"", StringComparison.Ordinal),
+        "Document, relative-image, and external Markdown links must be delegated to the bounded host instead of navigating directly.");
+    Assert(html.Contains("&lt;script&gt;alert", StringComparison.Ordinal)
+           && !html.Contains("<script>alert('untrusted')</script>", StringComparison.Ordinal),
+        "Raw Markdown HTML must remain encoded data.");
+    Assert(html.Contains("复制整块", StringComparison.Ordinal)
+           && html.Contains("copy-code", StringComparison.Ordinal)
+           && html.Contains("chrome.webview.postMessage", StringComparison.Ordinal),
+        "Fenced code must expose a whole-block copy request to the host.");
+    Assert(html.Contains("参考图：[<a href=\"#\" data-pfh-href=\"../人物图/代码块参考.png\">代码块女主图</a>](../人物图/代码块参考.png)", StringComparison.Ordinal),
+        "Markdown links inside a fenced prompt block must stay visually literal while exposing a bounded click target.");
+    Assert(html.Contains("id=\"项目标题\"", StringComparison.Ordinal),
+        "Unicode headings must retain local anchor navigation.");
+
+    var warmGraphiteHtml = MarkdownHtmlRenderer.Render(markdown, MarkdownHtmlTheme.WarmGraphite);
+    Assert(warmGraphiteHtml.Contains("<body class=\"warm-graphite\">", StringComparison.Ordinal)
+           && warmGraphiteHtml.Contains("<main id=\"document\">", StringComparison.Ordinal)
+           && warmGraphiteHtml.Contains("body.warm-graphite { background: #11110f; color: #b9b2a7; }", StringComparison.Ordinal)
+           && warmGraphiteHtml.Contains("outline-color: #edb56d", StringComparison.Ordinal),
+        "The warm-graphite reading surface must use the selected amber theme instead of inheriting midnight-blue accents.");
+
+    var wrappedHtml = MarkdownHtmlRenderer.Render(markdown, MarkdownHtmlTheme.WarmGraphite, wrapCodeBlocks: true);
+    Assert(wrappedHtml.Contains("<body class=\"warm-graphite wrap-code\">", StringComparison.Ordinal)
+           && wrappedHtml.Contains("body.wrap-code pre { white-space: pre-wrap;", StringComparison.Ordinal),
+        "The Markdown reading surface must expose a real code-block wrapping state.");
+    return Task.CompletedTask;
+}
+
+static Task TestMarkdownProjectLinkResolver()
+{
+    using var workspace = TemporaryWorkspace.Create();
+    var promptFolder = Directory.CreateDirectory(Path.Combine(workspace.Root, "提示词"));
+    var imageFolder = Directory.CreateDirectory(Path.Combine(workspace.Root, "人物图"));
+    var sourcePath = Path.Combine(promptFolder.FullName, "镜头03.md");
+    var imagePath = Path.Combine(imageFolder.FullName, "女主 正面.png");
+    File.WriteAllText(sourcePath, "# 镜头 03");
+    File.WriteAllBytes(imagePath, [0x89, 0x50, 0x4E, 0x47]);
+
+    var resolvedImage = MarkdownProjectLinkResolver.ResolveLocalPath(
+        workspace.Root,
+        sourcePath,
+        "../人物图/女主%20正面.png");
+    Assert(string.Equals(resolvedImage, imagePath, StringComparison.OrdinalIgnoreCase),
+        "A URL-encoded project-relative image link must resolve beside the Markdown source.");
+
+    var resolvedFolder = MarkdownProjectLinkResolver.ResolveLocalPath(
+        workspace.Root,
+        sourcePath,
+        "../人物图/");
+    Assert(string.Equals(resolvedFolder, imageFolder.FullName, StringComparison.OrdinalIgnoreCase),
+        "A project-relative folder link must resolve to the bounded folder.");
+
+    AssertThrows<UnauthorizedAccessException>(() =>
+        MarkdownProjectLinkResolver.ResolveLocalPath(
+            workspace.Root,
+            sourcePath,
+            "../../项目外图片.png"));
+    AssertThrows<UnauthorizedAccessException>(() =>
+        MarkdownProjectLinkResolver.ResolveLocalPath(
+            workspace.Root,
+            sourcePath,
+            imagePath));
+    return Task.CompletedTask;
+}
+
+static async Task TestGitHubReleaseUpdateService()
+{
+    HttpRequestMessage? observedRequest = null;
+    using var client = new HttpClient(new StubHttpMessageHandler(request =>
+    {
+        observedRequest = request;
+        return new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""
+                {
+                  "tag_name": "v0.0.4",
+                  "name": "Project File Hub 0.0.4",
+                  "body": "Safe update notification.",
+                  "published_at": "2026-08-31T08:00:00Z",
+                  "html_url": "https://github.com/anjero-sudo/Project-File-Hub/releases/tag/v0.0.4"
+                }
+                """, Encoding.UTF8, "application/json")
+        };
+    }));
+    var service = new GitHubReleaseUpdateService(client);
+    var available = await service.CheckAsync(new Version(0, 0, 3, 0));
+
+    Assert(available.Status == ReleaseUpdateStatus.UpdateAvailable
+           && available.LatestVersion == new Version(0, 0, 4),
+        "A newer stable GitHub Release must be reported as available.");
+    Assert(GitHubReleaseUpdateService.IsTrustedReleasePage(available.ReleasePageUri),
+        "Only the expected repository release path may be returned to the desktop host.");
+    Assert(observedRequest?.RequestUri?.Host == "api.github.com"
+           && observedRequest.Headers.UserAgent.Count > 0,
+        "The update check must call the official GitHub API with an identifiable client header.");
+
+    using var noReleaseClient = new HttpClient(new StubHttpMessageHandler(_ =>
+        new HttpResponseMessage(HttpStatusCode.NotFound)));
+    var noRelease = await new GitHubReleaseUpdateService(noReleaseClient)
+        .CheckAsync(new Version(0, 0, 4));
+    Assert(noRelease.Status == ReleaseUpdateStatus.NoPublishedRelease,
+        "A repository without Releases must be a clear product state, not a network failure.");
+
+    using var untrustedClient = new HttpClient(new StubHttpMessageHandler(_ =>
+        new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""
+                {
+                  "tag_name": "v0.0.5",
+                  "html_url": "https://example.com/download/app.exe"
+                }
+                """, Encoding.UTF8, "application/json")
+        }));
+    var untrusted = await new GitHubReleaseUpdateService(untrustedClient)
+        .CheckAsync(new Version(0, 0, 4));
+    Assert(untrusted.ReleasePageUri == GitHubReleaseUpdateService.ReleasesPageUri,
+        "An untrusted release URL must fall back to the canonical repository Releases page.");
+    Assert(!GitHubReleaseUpdateService.TryParseReleaseVersion("latest", out _),
+        "Non-version tags must not participate in update comparison.");
 }
 
 static Task TestCodePreviewTokenizer()
@@ -668,6 +833,8 @@ static async Task TestProjectIndex()
     using var workspace = TemporaryWorkspace.Create();
     var assets = Directory.CreateDirectory(Path.Combine(workspace.Root, "assets", "nested"));
     File.WriteAllText(Path.Combine(assets.FullName, "first.png"), "image");
+    var other = Directory.CreateDirectory(Path.Combine(workspace.Root, "other"));
+    File.WriteAllText(Path.Combine(other.FullName, "outside.png"), "image");
     File.WriteAllText(Path.Combine(workspace.Root, "Program.cs"), "class Program {}");
     var databasePath = workspace.Root + ".index.db";
 
@@ -682,8 +849,29 @@ static async Task TestProjectIndex()
         var code = await index.QueryAsync(
             FileItemCategory.Code,
             new FileQueryOptions(Category: FileItemCategory.Code));
-        Assert(images.Count == 1 && images[0].Name == "first.png", "The initial scan must find images in nested folders.");
+        Assert(images.Count == 2, "The initial scan must find images in nested folders.");
         Assert(code.Count == 1 && code[0].Name == "Program.cs", "The initial scan must classify code files.");
+
+        var scopedImages = await index.QuerySubtreeAsync(
+            FileItemCategory.Image,
+            Path.Combine(workspace.Root, "assets"),
+            new FileQueryOptions(Category: FileItemCategory.Image));
+        Assert(scopedImages.Count == 1 && scopedImages[0].Name == "first.png",
+            "Recursive filtering must stay inside the currently selected folder subtree.");
+        var escaped = false;
+        try
+        {
+            await index.QuerySubtreeAsync(
+                FileItemCategory.Image,
+                workspace.Root + "-outside",
+                new FileQueryOptions(Category: FileItemCategory.Image));
+        }
+        catch (UnauthorizedAccessException)
+        {
+            escaped = true;
+        }
+
+        Assert(escaped, "Recursive filtering must reject a folder outside the active project root.");
 
         File.WriteAllText(Path.Combine(assets.FullName, "second.png"), "image");
         var incrementalUpdateObserved = false;
@@ -693,7 +881,7 @@ static async Task TestProjectIndex()
             images = await index.QueryAsync(
                 FileItemCategory.Image,
                 new FileQueryOptions(Category: FileItemCategory.Image));
-            if (images.Count == 2)
+            if (images.Count == 3)
             {
                 incrementalUpdateObserved = true;
                 break;
@@ -709,7 +897,7 @@ static async Task TestProjectIndex()
         images = await index.QueryAsync(
             FileItemCategory.Image,
             new FileQueryOptions(Category: FileItemCategory.Image));
-        Assert(images.Count == 2, "A paused project index must not process filesystem watcher changes.");
+        Assert(images.Count == 3, "A paused project index must not process filesystem watcher changes.");
 
         index.Resume();
         Assert(!index.IsPaused, "Resuming the project index must clear its paused state.");
@@ -720,7 +908,7 @@ static async Task TestProjectIndex()
             images = await index.QueryAsync(
                 FileItemCategory.Image,
                 new FileQueryOptions(Category: FileItemCategory.Image));
-            if (images.Count == 3)
+            if (images.Count == 4)
             {
                 resumeReconciliationObserved = true;
                 break;
@@ -800,4 +988,13 @@ file sealed class TemporaryWorkspace : IDisposable
 file sealed class InlineProgress<T>(Action<T> report) : IProgress<T>
 {
     public void Report(T value) => report(value);
+}
+
+file sealed class StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> responseFactory)
+    : HttpMessageHandler
+{
+    protected override Task<HttpResponseMessage> SendAsync(
+        HttpRequestMessage request,
+        CancellationToken cancellationToken) =>
+        Task.FromResult(responseFactory(request));
 }

@@ -14,6 +14,10 @@ public sealed record AppSettingsState
 
     public bool StartWithWindows { get; init; }
 
+    public bool CheckForUpdatesOnStartup { get; init; }
+
+    public DateTimeOffset? LastUpdateCheckUtc { get; init; }
+
     public bool CloseToTrayEnabled { get; init; } = true;
 
     public bool CloseToTrayConfigured { get; init; }
@@ -24,6 +28,10 @@ public sealed record AppSettingsState
     public string Theme { get; init; } = AppThemeNames.Midnight;
 
     public string Density { get; init; } = AppDensityNames.Comfortable;
+
+    public double? TreePaneWidth { get; init; }
+
+    public double? InspectorPaneWidth { get; init; }
 
     public Dictionary<Guid, ProjectWorkspaceState> ProjectWorkspaces { get; init; } = [];
 
@@ -42,6 +50,8 @@ public sealed record ProjectWorkspaceState
     public SortDirection SortDirection { get; init; } = SortDirection.Ascending;
 
     public bool GridView { get; init; } = true;
+
+    public bool IncludeSubfolders { get; init; }
 }
 
 public static class AppThemeNames

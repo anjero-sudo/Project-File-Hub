@@ -105,6 +105,62 @@ public sealed class ProjectIndexService : IAsyncDisposable
         }
     }
 
+    public async Task<IReadOnlyList<FileSystemItem>> QuerySubtreeAsync(
+        FileItemCategory category,
+        string folderPath,
+        FileQueryOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        var safeFolderPath = _boundary.EnsureSafe(folderPath);
+        if (!Directory.Exists(safeFolderPath))
+        {
+            throw new DirectoryNotFoundException("筛选范围必须是当前项目内的文件夹。");
+        }
+
+        var prefix = safeFolderPath.EndsWith(Path.DirectorySeparatorChar)
+            ? safeFolderPath
+            : safeFolderPath + Path.DirectorySeparatorChar;
+
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await using var connection = new SqliteConnection(_connectionString);
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT name, path, is_directory, size, modified_utc_ticks, created_utc_ticks, extension, category
+                FROM entries
+                WHERE category = $category
+                  AND lower(substr(path, 1, length($prefix))) = lower($prefix)
+                """;
+            command.Parameters.AddWithValue("$category", (int)category);
+            command.Parameters.AddWithValue("$prefix", prefix);
+
+            var items = new List<FileSystemItem>();
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                var isDirectory = reader.GetInt64(2) != 0;
+                items.Add(new FileSystemItem(
+                    reader.GetString(0),
+                    reader.GetString(1),
+                    isDirectory,
+                    reader.IsDBNull(3) ? null : reader.GetInt64(3),
+                    new DateTimeOffset(reader.GetInt64(4), TimeSpan.Zero),
+                    new DateTimeOffset(reader.GetInt64(5), TimeSpan.Zero),
+                    reader.GetString(6),
+                    (FileItemCategory)reader.GetInt64(7)));
+            }
+
+            return Sort(items, options);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     public void RequestRefresh()
     {
         ThrowIfDisposed();

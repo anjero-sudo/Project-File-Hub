@@ -6,7 +6,12 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
-$dotnet = Join-Path $projectRoot '.tools\dotnet\dotnet.exe'
+$localDotnet = Join-Path $projectRoot '.tools\dotnet\dotnet.exe'
+$dotnet = if (Test-Path -LiteralPath $localDotnet) {
+    $localDotnet
+} else {
+    (Get-Command dotnet -ErrorAction Stop).Source
+}
 $solution = Join-Path $projectRoot 'ProjectFileHub.slnx'
 $nugetConfig = Join-Path $projectRoot 'NuGet.Config'
 

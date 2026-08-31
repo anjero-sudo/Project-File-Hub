@@ -30,7 +30,12 @@ public static class FileVisualClassifier
     {
         ArgumentNullException.ThrowIfNull(item);
         var kind = Classify(item);
-        if (kind is FileVisualKind.Folder or FileVisualKind.Image)
+        if (kind == FileVisualKind.Folder)
+        {
+            return "DIR";
+        }
+
+        if (kind == FileVisualKind.Image)
         {
             return string.Empty;
         }
@@ -41,5 +46,25 @@ public static class FileVisualClassifier
         }
 
         return FileFormatCatalog.GetFallbackBadge(item.Extension);
+    }
+
+    public static string GetTypeMonogram(FileSystemItem item)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        if (item.IsDirectory)
+        {
+            return "DIR";
+        }
+
+        if (FileFormatCatalog.TryGet(item.Extension, out var descriptor))
+        {
+            var badge = string.IsNullOrWhiteSpace(descriptor.Badge)
+                ? FileFormatCatalog.GetFallbackBadge(item.Extension)
+                : descriptor.Badge;
+            return string.IsNullOrWhiteSpace(badge) ? "FILE" : badge;
+        }
+
+        var fallback = FileFormatCatalog.GetFallbackBadge(item.Extension);
+        return string.IsNullOrWhiteSpace(fallback) ? "FILE" : fallback;
     }
 }
