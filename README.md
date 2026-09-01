@@ -10,14 +10,14 @@
 </p>
 
 <p align="center">
-  <img alt="Version 0.0.5" src="https://img.shields.io/badge/version-0.0.5-0ea5e9" />
+  <img alt="Version 0.0.6" src="https://img.shields.io/badge/version-0.0.6-0ea5e9" />
   <img alt="Windows 11 x64" src="https://img.shields.io/badge/platform-Windows%2011%20x64-2563eb" />
   <img alt=".NET 10" src="https://img.shields.io/badge/.NET-10.0-7c3aed" />
   <img alt="Status Development Preview" src="https://img.shields.io/badge/status-development%20preview-f59e0b" />
 </p>
 
 > [!IMPORTANT]
-> `0.0.5` 是开发预览版本，适合本机试用和继续开发。目前尚未提供安装程序或代码签名；带 `v0.0.0` 标签的版本可由 GitHub Actions 生成便携 ZIP 与 SHA-256 校验文件。
+> `0.0.6` 是开发预览版本，适合本机试用和继续开发。GitHub Release 同时提供当前用户安装版 `Setup.exe` 和解压即用的便携 ZIP；两种产物都有 SHA-256 校验文件。安装器目前尚未进行代码签名，Windows SmartScreen 可能显示“未知发布者”。
 
 ## 为什么做这个项目
 
@@ -25,7 +25,7 @@ Windows 资源管理器适合浏览整个系统，却不一定适合长期管理
 
 它不是 Windows Shell 的完整替代品，也不是知识库，而是一套更专注、更稳定的项目文件工作流。
 
-## 0.0.5 功能概览
+## 0.0.6 功能概览
 
 - **项目级工作空间**：可以登记多个项目，但同一时间只激活一个；所有导航和文件操作都受当前项目根目录约束。
 - **可靠的项目记忆**：项目列表使用带修订号的主记录、独立 Roaming 备份和上一版本快照；主记录被清空、损坏或丢失时可以恢复。
@@ -42,6 +42,7 @@ Windows 资源管理器适合浏览整个系统，却不一定适合长期管理
 - **Focus Canvas 界面**：提供 Dark · Midnight、Dark · Graphite 和 Light · Mist 三套主题；顶栏可快速切换主题，项目树与详情栏可拖动调整宽度。
 - **自定义项目管理中心**：项目切换、状态检查和“移出管理”确认使用应用自身的 Focus Canvas 界面；Windows 文件夹选择器只负责安全选择路径。
 - **GitHub 版本同步**：设置中可手动检查最新稳定 Release，也可选择启动时每天最多检查一次；应用不会跟随 `main`、静默下载或自行替换程序。
+- **标准 Windows 安装器**：提供无需管理员权限的当前用户安装、开始菜单与可选桌面快捷方式、Windows“已安装的应用”登记、同 AppId 原位升级和标准卸载；安装与卸载不会删除项目列表、设置或索引数据。
 - **Windows 集成**：原生圆形 F 图标、任务栏身份、通知区域驻留、后台索引、左键双击恢复并置前主窗口，以及完整退出菜单。
 - **可选 MCP 适配器**：独立、默认关闭、只读；桌面应用本身不依赖 MCP 或云服务。
 
@@ -76,6 +77,17 @@ Markdown 中使用标准链接即可把提示词和项目图片关联起来。�
 
 点击图片链接会在当前 Markdown 上方打开一层图片预览，不切换文件夹、不改变 Markdown 的滚动位置；关闭图片层即可继续点下一张。图片层和普通图片预览中的“复制图片”、右键菜单及 Ctrl+C 会同时向 Windows 剪贴板提供图片画面、原文件和路径，方便用户手动粘贴到其他软件。点击文件夹链接仍会跳转到对应目录。裸写的 `../人物图/女主-正面.png` 仍是普通文字；需要点击的目标应使用 `[名称](相对路径)`，这些标记可以由 Codex 或模板自动生成。不存在的目标会在预览内明确提示，所有本地链接都会重新经过当前项目根目录和符号链接边界检查。
 
+## 安装与便携使用
+
+正式 Release 提供两种 Windows x64 交付方式：
+
+- `ProjectFileHub-Setup-0.0.6-win-x64.exe`：推荐给普通用户。默认安装到 `%LOCALAPPDATA%\Programs\ProjectFileHub`，创建开始菜单快捷方式并可选择桌面快捷方式，同时登记标准卸载入口。
+- `ProjectFileHub-0.0.6-win-x64.zip`：便携版。解压后直接运行 `ProjectFileHub.exe`，不登记安装与卸载信息。
+
+安装器把可替换的自包含程序放在安装目录的 `app` 子目录中。升级时只清理这个由安装器拥有的程序区，避免旧运行时文件残留；位于 `%LOCALAPPDATA%\ProjectFileHub` 和 `%APPDATA%\Anjero\ProjectFileHub` 的项目列表、设置、备份与索引不会被升级或卸载删除。安装器使用稳定 AppId，因此后续版本会沿用用户之前选择的安装位置并原位升级。
+
+如果电脑上正在运行 Project File Hub，安装器会通过 Windows Restart Manager 请求关闭占用程序文件的实例；它不会使用强制终止作为默认行为。安装完成页可以直接启动新版本。
+
 ## 从源码构建
 
 ### 环境要求
@@ -94,8 +106,14 @@ Markdown 中使用标准链接即可把提示词和项目图片关联起来。�
 # 还原并构建完整解决方案
 .\eng\build.ps1
 
-# 在本机生成 0.0.5 便携 ZIP 与 SHA-256（不会上传）
+# 在本机生成 0.0.6 便携 ZIP 与 SHA-256（不会上传）
 .\eng\package-release.ps1
+
+# 使用已有便携发布目录生成 Setup.exe 与 SHA-256
+.\eng\build-installer.ps1
+
+# 在隔离目录验证首次安装、原位升级、启动、卸载和用户数据保留
+.\eng\test-installer.ps1
 ```
 
 调试版本默认输出到：
@@ -116,6 +134,7 @@ src/
 tests/
   ProjectFileHub.Core.Tests/ 轻量自动化核心测试
 eng/                         构建、测试和图标生成脚本
+installer/                   Inno Setup 安装、升级与卸载定义
 docs/                        面向使用者和开发者的补充文档
 ```
 
@@ -138,14 +157,14 @@ MCP 服务器不是桌面应用依赖项，也不会默认启动。当前适配�
 
 ## GitHub 发布
 
-推送与 `Directory.Build.props` 一致的 `v0.0.0` 标签后，仓库的 `Publish Windows release` 工作流会在 Windows runner 上重新测试、构建并创建 GitHub Release，附带自包含的 x64 便携 ZIP 与 SHA-256。标签、推送与 Release 发布仍是维护者的显式操作。
+推送与 `Directory.Build.props` 一致的 `v0.0.0` 标签后，仓库的 `Publish Windows release` 工作流会在 Windows runner 上重新测试、构建、启动检查并创建 GitHub Release。每个版本附带自包含的 x64 便携 ZIP、当前用户 `Setup.exe` 及二者各自的 SHA-256；安装器还会在隔离目录执行首次安装、同 AppId 原位升级、真实窗口启动、标准卸载、快捷方式和用户数据保留检查。标签、推送与 Release 发布仍是维护者的显式操作。
 
 应用内更新功能只读取该仓库的最新稳定 GitHub Release 元数据；若仓库尚无 Release，会明确显示“尚未发布”，不会把 `main` 分支或普通提交误当成可安装更新。
 
 ## 后续计划
 
 - 将 Windows Shell Preview Handler 放入独立进程，降低第三方预览提供程序影响主界面的风险。
-- 在便携包流程稳定后，继续完善安装、代码签名和经用户确认的升级安装流程。
+- 配置组织控制的 Windows 代码签名证书，为应用与安装器提供可验证发布者身份并降低 SmartScreen 提示。
 - 持续改进键盘操作、可访问性、高对比度和缩放体验。
 
 ## 反馈
