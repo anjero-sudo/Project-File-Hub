@@ -198,11 +198,13 @@ public sealed class ExplorerItemViewModel : INotifyPropertyChanged
                 ThumbnailMode.PicturesView,
                 320,
                 ThumbnailOptions.ResizeThumbnail);
+            if (thumbnail is null || thumbnail.Size == 0) return;
             var bitmap = new BitmapImage();
             await bitmap.SetSourceAsync(thumbnail);
             Thumbnail = bitmap;
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException
+                                         or System.Runtime.InteropServices.COMException)
         {
             // Keep the category glyph when Windows cannot decode a thumbnail.
         }

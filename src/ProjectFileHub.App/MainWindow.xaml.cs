@@ -63,6 +63,8 @@ public sealed partial class MainWindow : Window
     private SortDirection _sortDirection = SortDirection.Ascending;
     private FileItemCategory? _categoryFilter;
     private bool _includeSubfolders;
+    private string _searchText = string.Empty;
+    private readonly DispatcherTimer _searchTimer = new() { Interval = TimeSpan.FromMilliseconds(220) };
     private bool _loaded;
     private bool _synchronizingProjectPicker;
     private bool _synchronizingSelection;
@@ -71,6 +73,7 @@ public sealed partial class MainWindow : Window
     private bool _multiSelectMode;
     private bool _renameCommitInProgress;
     private int _previewVersion;
+    private CancellationTokenSource? _wordPreviewCancellation;
     private IReadOnlyList<string> _draggedPaths = [];
     private string? _hoveredTreePath;
     private Func<Task>? _undoAction;
@@ -80,6 +83,7 @@ public sealed partial class MainWindow : Window
     private CancellationTokenSource? _indexCancellation;
     private CancellationTokenSource? _fileViewCancellation;
     private int _fileViewVersion;
+    private Task _fileViewRefreshTask = Task.CompletedTask;
     private PreviewMode _previewMode = PreviewMode.WorkspaceQuickPreview;
     private bool _previewTextWrapEnabled = true;
     private float _previewZoomFactor = 1.0f;
@@ -184,6 +188,7 @@ public sealed partial class MainWindow : Window
             Path.Combine(localData, "ProjectFileHub", "settings.json"));
         _recycleBin = new RecycleBinService(_fileOperations);
         _treeHoverTimer.Tick += OnTreeHoverTimerTick;
+        _searchTimer.Tick += (_, _) => { _searchTimer.Stop(); RefreshFileView(); };
         Closed += OnWindowClosed;
 
         ConfigureWindow();
@@ -983,6 +988,9 @@ public sealed partial class MainWindow : Window
         if (ProjectManagerList.SelectedItem is not RegisteredProject project)
         {
             ProjectManagerNameText.Text = "请选择项目";
+            ProjectAliasBox.Text = string.Empty;
+            ProjectAliasBox.IsEnabled = false;
+            SaveProjectAliasButton.IsEnabled = false;
             ProjectManagerPathText.Text = "从左侧清单选择一个项目";
             ProjectManagerStateText.Text = "未选择";
             ProjectManagerSwitchButton.IsEnabled = false;
@@ -992,6 +1000,9 @@ public sealed partial class MainWindow : Window
 
         var exists = Directory.Exists(project.RootPath);
         ProjectManagerNameText.Text = project.Name;
+        ProjectAliasBox.Text = project.Name;
+        ProjectAliasBox.IsEnabled = true;
+        SaveProjectAliasButton.IsEnabled = true;
         ProjectManagerPathText.Text = project.RootPath;
         ProjectManagerStateText.Text = !exists
             ? "目录已不存在 · 可安全移出清单"
@@ -1000,6 +1011,38 @@ public sealed partial class MainWindow : Window
                 : "已登记 · 可以切换";
         ProjectManagerSwitchButton.IsEnabled = exists && project.Id != _activeProject?.Id;
         ProjectManagerRemoveButton.IsEnabled = true;
+    }
+
+    private async void OnSaveProjectAliasClicked(object sender, RoutedEventArgs e)
+    {
+        if (ProjectManagerList.SelectedItem is not RegisteredProject selected) return;
+        var alias = ProjectAliasBox.Text;
+        SaveProjectAliasButton.IsEnabled = false;
+        try
+        {
+            _registryState = await _registryStore.RenameAsync(selected.Id, alias);
+            if (_activeProject is not null)
+                _activeProject = _registryState.Projects.FirstOrDefault(p => p.Id == _activeProject.Id);
+            _synchronizingProjectPicker = true;
+            try
+            {
+                ProjectPicker.ItemsSource = _registryState.Projects;
+                ProjectPicker.SelectedItem = _activeProject;
+            }
+            finally { _synchronizingProjectPicker = false; }
+            if (_activeProject is not null && ProjectTree.RootNodes.Count > 0)
+            {
+                ProjectTree.RootNodes[0].Content = new DirectoryNodeViewModel(_activeProject.Name, _activeProject.RootPath);
+                UpdateFolderHeader();
+            }
+            PopulateProjectManager(_registryState.Projects.First(p => p.Id == selected.Id));
+            ProjectManagerStatusText.Text = "项目别名已保存；磁盘文件夹名称保持不变";
+        }
+        catch (Exception exception)
+        {
+            ProjectManagerStatusText.Text = $"无法保存别名：{exception.Message}";
+        }
+        finally { SaveProjectAliasButton.IsEnabled = ProjectManagerList.SelectedItem is RegisteredProject; }
     }
 
     private void OnCloseProjectManagerClicked(object sender, RoutedEventArgs e) =>
@@ -1096,6 +1139,7 @@ public sealed partial class MainWindow : Window
         {
             var boundary = new PathBoundary(project.RootPath);
             boundary.EnsureSafe(project.RootPath);
+            ClosePreview();
             ClearUndo();
             SetMultiSelectMode(false, clearSelectionWhenDisabled: true, announce: false);
 
@@ -1429,7 +1473,7 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private void CreateFolderAt(string parentPath)
+    private async void CreateFolderAt(string parentPath)
     {
         if (_activeProject is null)
         {
@@ -1461,6 +1505,7 @@ public sealed partial class MainWindow : Window
             if (string.Equals(_currentFolder, parentPath, StringComparison.OrdinalIgnoreCase))
             {
                 RefreshFileView();
+                await _fileViewRefreshTask;
                 if (FindItem(createdPath) is { } item)
                 {
                     SelectPath(createdPath);
@@ -2011,6 +2056,55 @@ public sealed partial class MainWindow : Window
         return null;
     }
 
+    private void OnSearchTextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (!_loaded || _currentFolder is null) return;
+        _searchText = SearchBox.Text.Trim();
+        CancelFileViewRefresh();
+        Items.Clear();
+        PreviewItems.Clear();
+        _selectedItem = null;
+        UpdateInspector(null);
+        UpdateMultiSelectionUi();
+        _searchTimer.Stop();
+        _searchTimer.Start();
+    }
+
+    private void OnSearchKeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key == VirtualKey.Escape)
+        {
+            SearchBox.Text = string.Empty;
+            ActiveFileView.Focus(FocusState.Programmatic);
+            e.Handled = true;
+        }
+        else if (e.Key == VirtualKey.Enter)
+        {
+            _searchTimer.Stop();
+            RefreshFileView();
+            e.Handled = true;
+        }
+    }
+
+    private void OnUpFolderClicked(object sender, RoutedEventArgs e) => NavigateUp();
+
+    private void NavigateUp()
+    {
+        if (_activeProject is null || _currentFolder is null) return;
+        try
+        {
+            var parent = _fileBrowser.GetParentFolder(_activeProject.RootPath, _currentFolder);
+            if (parent is null) return;
+            NavigateTo(parent);
+            if (ProjectTree.RootNodes.Count > 0)
+                SelectAndExpandTreePath(ProjectTree.RootNodes[0], parent);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            SetStatus($"无法返回上一级：{exception.Message}");
+        }
+    }
+
     private void NavigateTo(string folderPath, bool persistWorkspace = true)
     {
         if (_activeProject is null)
@@ -2023,6 +2117,11 @@ public sealed partial class MainWindow : Window
             var boundary = new PathBoundary(_activeProject.RootPath);
             CancelFileViewRefresh();
             _currentFolder = boundary.EnsureSafe(folderPath);
+            _searchTimer.Stop();
+            _searchText = string.Empty;
+            SearchBox.Text = string.Empty;
+            _searchTimer.Stop();
+            SearchBox.IsEnabled = true;
             _selectedItem = null;
             Items.Clear();
             PreviewItems.Clear();
@@ -2051,6 +2150,7 @@ public sealed partial class MainWindow : Window
 
         var relative = Path.GetRelativePath(_activeProject.RootPath, _currentFolder);
         var isRoot = relative == ".";
+        UpFolderButton.IsEnabled = !isRoot;
         var location = isRoot ? _activeProject.RootPath : relative;
         var breadcrumb = isRoot
             ? $"{_activeProject.Name}  /"
@@ -2079,45 +2179,7 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        if (_categoryFilter is not null)
-        {
-            _ = RefreshCurrentFolderCategoryAsync();
-            return;
-        }
-
-        CancelFileViewRefresh();
-
-        try
-        {
-            var results = _fileBrowser.GetItems(
-                _activeProject.RootPath,
-                _currentFolder,
-                new FileQueryOptions(_sortField, _sortDirection, _categoryFilter));
-
-            Items.Clear();
-            foreach (var item in results)
-            {
-                Items.Add(new ExplorerItemViewModel(item));
-            }
-
-            _selectedItem = null;
-            PreviewItems.Clear();
-            ItemCountText.Text = $"{Items.Count} 个项目";
-            EmptyState.Visibility = Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-            EmptyStateTitle.Text = Items.Count == 0 ? "这个位置没有匹配的文件" : string.Empty;
-            EmptyStateMessage.Text = _categoryFilter is null ? "文件夹为空" : "可以切换到其他文件类型";
-            UpdateInspector(null);
-            SelectionStatusText.Text = "未选择文件";
-            UpdateMultiSelectionUi();
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-        {
-            Items.Clear();
-            EmptyState.Visibility = Visibility.Visible;
-            EmptyStateTitle.Text = "无法读取此文件夹";
-            EmptyStateMessage.Text = exception.Message;
-            SetStatus(exception.Message);
-        }
+        _fileViewRefreshTask = RefreshCurrentFolderCategoryAsync();
     }
 
     private void ShowNoProjectState(bool preserveRegisteredProjects = false)
@@ -2128,6 +2190,11 @@ public sealed partial class MainWindow : Window
         _activeProject = null;
         ClearUndo();
         _currentFolder = null;
+        _searchTimer.Stop();
+        _searchText = string.Empty;
+        SearchBox.Text = string.Empty;
+        SearchBox.IsEnabled = false;
+        UpFolderButton.IsEnabled = false;
         ProjectTree.RootNodes.Clear();
         Items.Clear();
         PreviewItems.Clear();
@@ -2287,7 +2354,6 @@ public sealed partial class MainWindow : Window
     private async Task RefreshCurrentFolderCategoryAsync()
     {
         if (_activeProject is not RegisteredProject project
-            || _categoryFilter is not FileItemCategory category
             || _currentFolder is not string folderPath)
         {
             return;
@@ -2295,11 +2361,13 @@ public sealed partial class MainWindow : Window
 
         var cancellation = StartFileViewRefresh(out var requestVersion);
         var cancellationToken = cancellation.Token;
-        var categoryName = GetCategoryName(category);
+        var category = _categoryFilter;
+        var query = new FileQueryOptions(_sortField, _sortDirection, category, _searchText);
+        var categoryName = category is { } selectedCategory ? GetCategoryName(selectedCategory) : "项目";
         var folderName = string.Equals(folderPath, project.RootPath, StringComparison.OrdinalIgnoreCase)
             ? project.Name
             : new DirectoryInfo(folderPath).Name;
-        var includeSubfolders = _includeSubfolders;
+        var includeSubfolders = _includeSubfolders && category is not null;
         var loadingStarted = DateTimeOffset.UtcNow;
         ShowFileLoading(folderName, categoryName);
         await Task.Yield();
@@ -2318,9 +2386,9 @@ public sealed partial class MainWindow : Window
                 var indexService = _projectIndex
                     ?? throw new InvalidOperationException("项目分类索引尚未就绪。");
                 results = await indexService.QuerySubtreeAsync(
-                    category,
+                    category!.Value,
                     folderPath,
-                    new FileQueryOptions(_sortField, _sortDirection, category),
+                    query,
                     cancellationToken);
             }
             else
@@ -2336,13 +2404,14 @@ public sealed partial class MainWindow : Window
                     () => _fileBrowser.GetItems(
                         project.RootPath,
                         folderPath,
-                        new FileQueryOptions(_sortField, _sortDirection, category),
+                        query,
                         progress,
                         cancellationToken),
                     cancellationToken);
             }
 
             EnsureCurrentFileViewRequest(requestVersion, project.Id, folderPath, category, includeSubfolders, cancellationToken);
+            results = results.Where(item => query.MatchesName(item.Name)).ToArray();
 
             Items.Clear();
             for (var index = 0; index < results.Count; index++)
@@ -2376,7 +2445,7 @@ public sealed partial class MainWindow : Window
             EmptyStateTitle.Text = Items.Count == 0
                 ? $"当前{(includeSubfolders ? "文件夹树" : "文件夹")}中没有{categoryName}"
                 : string.Empty;
-            EmptyStateMessage.Text = Items.Count == 0 ? "可以切换左侧文件夹或选择其他文件类型" : string.Empty;
+            EmptyStateMessage.Text = Items.Count == 0 ? "可以清空搜索、切换文件夹或取消类型筛选" : string.Empty;
             UpdateInspector(null);
             SelectionStatusText.Text = "未选择文件";
             UpdateMultiSelectionUi();
@@ -2429,7 +2498,7 @@ public sealed partial class MainWindow : Window
         int requestVersion,
         Guid projectId,
         string folderPath,
-        FileItemCategory category,
+        FileItemCategory? category,
         bool includeSubfolders,
         CancellationToken cancellationToken)
     {
@@ -2438,7 +2507,7 @@ public sealed partial class MainWindow : Window
             || _activeProject?.Id != projectId
             || !string.Equals(_currentFolder, folderPath, StringComparison.OrdinalIgnoreCase)
             || _categoryFilter != category
-            || _includeSubfolders != includeSubfolders)
+            || (_includeSubfolders && _categoryFilter is not null) != includeSubfolders)
         {
             throw new OperationCanceledException(cancellationToken);
         }
@@ -2664,6 +2733,7 @@ public sealed partial class MainWindow : Window
     private void OnWindowClosed(object sender, WindowEventArgs args)
     {
         _applicationExitRequested = true;
+        _searchTimer.Stop();
         UpdateCurrentWorkspaceSnapshot();
         try
         {
@@ -3616,7 +3686,7 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private Task UndoRenameAsync(string projectRoot, FileOperationResult result)
+    private async Task UndoRenameAsync(string projectRoot, FileOperationResult result)
     {
         EnsureUndoProject(projectRoot);
         var restored = _fileOperations.Rename(
@@ -3625,8 +3695,8 @@ public sealed partial class MainWindow : Window
             Path.GetFileName(result.SourcePath));
         RefreshFileView();
         RebuildProjectTree();
+        await _fileViewRefreshTask;
         SelectPath(restored.DestinationPath);
-        return Task.CompletedTask;
     }
 
     private Task UndoTransferAsync(string projectRoot, IReadOnlyList<FileOperationResult> results)
@@ -3738,11 +3808,11 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private Task CommitRenameAsync(ExplorerItemViewModel item, string requestedName)
+    private async Task CommitRenameAsync(ExplorerItemViewModel item, string requestedName)
     {
         if (_activeProject is null || !item.IsRenaming || _renameCommitInProgress)
         {
-            return Task.CompletedTask;
+            return;
         }
 
         _renameCommitInProgress = true;
@@ -3763,7 +3833,7 @@ public sealed partial class MainWindow : Window
                     item.SetRenameError("扩展名将改变，再按 Enter 确认");
                     SetStatus("扩展名变更需要再次确认");
                     FocusRenameBox(item);
-                    return Task.CompletedTask;
+                    return;
                 }
             }
 
@@ -3774,6 +3844,7 @@ public sealed partial class MainWindow : Window
                 "重命名",
                 () => UndoRenameAsync(projectRoot, result));
             RefreshFileView();
+            await _fileViewRefreshTask;
             SelectPath(result.DestinationPath);
             RebuildProjectTree();
             SetStatus($"已重命名为 {Path.GetFileName(result.DestinationPath)}");
@@ -3789,7 +3860,7 @@ public sealed partial class MainWindow : Window
             _renameCommitInProgress = false;
         }
 
-        return Task.CompletedTask;
+        return;
     }
 
     private void SelectPath(string fullPath)
@@ -3944,6 +4015,23 @@ public sealed partial class MainWindow : Window
             }
         }
 
+        if (PreviewOverlay.Visibility == Visibility.Visible) return;
+        if (controlDown && e.Key == VirtualKey.F)
+        {
+            SearchBox.Focus(FocusState.Programmatic);
+            SearchBox.SelectAll();
+            e.Handled = true;
+            return;
+        }
+        var altDown = (InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Menu)
+                       & CoreVirtualKeyStates.Down) != 0;
+        if (altDown && e.Key == VirtualKey.Up)
+        {
+            NavigateUp();
+            e.Handled = true;
+            return;
+        }
+
         if (controlDown && e.Key == VirtualKey.A)
         {
             SelectAllItems();
@@ -4047,6 +4135,24 @@ public sealed partial class MainWindow : Window
     private async Task ShowPreviewItemAsync(ExplorerItemViewModel item)
     {
         var previewVersion = ++_previewVersion;
+        AppDiagnostics.Log($"Preview requested · {item.FullPath} · version={previewVersion}");
+        try
+        {
+            if (_activeProject is null) return;
+            new PathBoundary(_activeProject.RootPath).EnsureSafe(item.FullPath);
+            await ShowPreviewItemCoreAsync(item, previewVersion);
+        }
+        catch (Exception exception)
+        {
+            AppDiagnostics.Log($"Preview failed · {item.FullPath} · HRESULT=0x{exception.HResult:X8}", exception);
+            if (previewVersion != _previewVersion) return;
+            ResetPreviewContent();
+            ShowPreviewFallback(item, "无法预览此文件；可以关闭预览、切换文件或在默认应用中打开。");
+        }
+    }
+
+    private async Task ShowPreviewItemCoreAsync(ExplorerItemViewModel item, int previewVersion)
+    {
         _previewItem = item;
         PreviewTitle.Text = item.Name;
         PreviewType.Text = item.DisplayType;
@@ -4080,10 +4186,15 @@ public sealed partial class MainWindow : Window
             }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
             {
-                ShowPreviewFallback(item, "Windows 无法解码这个图像文件");
+                if (previewVersion == _previewVersion) ShowPreviewFallback(item, "Windows 无法解码这个图像文件");
             }
         }
-        else if (IsTextPreviewSupported(item.Item.Extension))
+        else if (WordPreviewReader.Supports(item.Item.Extension))
+        {
+            await ShowWordPreviewAsync(item, previewVersion);
+        }
+        else if (TextPreviewReader.IsKnownText(item.Item.Extension)
+                 || !FileFormatCatalog.TryGet(item.Item.Extension, out _))
         {
             await ShowTextPreviewAsync(item, previewVersion);
         }
@@ -4093,21 +4204,32 @@ public sealed partial class MainWindow : Window
         }
         else if (!await TryShowSystemThumbnailAsync(item, previewVersion))
         {
-            ShowPreviewFallback(item, "Windows 暂时没有为此文件提供可显示的预览\n可使用下方按钮在默认应用中打开");
+            if (previewVersion == _previewVersion) ShowPreviewFallback(item, "Windows 暂时没有为此文件提供可显示的预览\n可使用下方按钮在默认应用中打开");
         }
         else
         {
             // The Windows shell thumbnail is already visible.
         }
 
+        if (previewVersion != _previewVersion) return;
         _synchronizingPreview = true;
-        PreviewFilmstrip.SelectedItem = item;
-        PreviewFilmstrip.ScrollIntoView(item, ScrollIntoViewAlignment.Leading);
-        _synchronizingPreview = false;
+        try
+        {
+            PreviewFilmstrip.SelectedItem = item;
+            if (PreviewFilmstrip.Visibility == Visibility.Visible)
+                PreviewFilmstrip.ScrollIntoView(item, ScrollIntoViewAlignment.Leading);
+        }
+        finally { _synchronizingPreview = false; }
     }
 
     private void ResetPreviewContent()
     {
+        _wordPreviewCancellation?.Cancel();
+        _wordPreviewCancellation?.Dispose();
+        _wordPreviewCancellation = null;
+        PreviewWordNotice.Visibility = Visibility.Collapsed;
+        PreviewText.FontSize = 13;
+        PreviewText.LineHeight = 21;
         CloseLinkedImagePreview();
         HidePreviewLinkNotice();
         CancelPreviewImagePan();
@@ -4170,21 +4292,74 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private async Task ShowTextPreviewAsync(ExplorerItemViewModel item, int previewVersion)
+    private async Task ShowWordPreviewAsync(ExplorerItemViewModel item, int previewVersion)
     {
-        const long maximumPreviewBytes = 1_500_000;
+        if (_activeProject is null) return;
+        if (WordPreviewReader.IsTemporaryFile(item.FullPath))
+        {
+            ShowPreviewFallback(item, WordPreviewReader.TemporaryFileMessage);
+            return;
+        }
+        var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+        _wordPreviewCancellation = cancellation;
+        PreviewText.FontFamily = new FontFamily("Segoe UI Variable, Microsoft YaHei UI");
+        PreviewText.FontSize = 16;
+        PreviewText.LineHeight = 27;
+        PreviewText.Text = "正在读取 Word 文档…";
+        PreviewTextScroll.Visibility = Visibility.Visible;
         try
         {
-            var info = new FileInfo(item.FullPath);
-            if (info.Length > maximumPreviewBytes)
+            var result = await WordPreviewReader.ReadAsync(_activeProject.RootPath, item.FullPath, cancellation.Token)
+                .WaitAsync(cancellation.Token);
+            if (previewVersion != _previewVersion) return;
+            PreviewText.Text = string.IsNullOrWhiteSpace(result.Text)
+                ? "（没有可读取的正文文字；文档可能为空或只包含图片。）" : result.Text;
+            PreviewWordNotice.Text = result.Notice;
+            PreviewWordNotice.Visibility = Visibility.Visible;
+            PreviewWrapButton.IsChecked = _previewTextWrapEnabled;
+            PreviewWrapButton.Visibility = Visibility.Visible;
+            ApplyPreviewWrapMode();
+            PreviewTextScroll.ChangeView(0, 0, null);
+            AppDiagnostics.Log($"Word content preview ready · {item.FullPath} · chars={result.Text.Length} · truncated={result.IsTruncated}");
+        }
+        catch (OperationCanceledException)
+        {
+            if (previewVersion == _previewVersion)
             {
-                ShowPreviewFallback(item, $"文本文件较大（{ExplorerItemViewModel.FormatBytes(info.Length)}）\n为保持预览流畅，请使用默认应用打开");
-                return;
+                PreviewTextScroll.Visibility = Visibility.Collapsed;
+                ShowPreviewFallback(item, "Word 文档读取超时，请使用默认应用打开。");
             }
-
-            var text = await File.ReadAllTextAsync(item.FullPath);
-            if (previewVersion != _previewVersion)
+        }
+        catch (Exception exception)
+        {
+            AppDiagnostics.Log($"Word preview failed · {item.FullPath}", exception);
+            if (previewVersion != _previewVersion) return;
+            PreviewTextScroll.Visibility = Visibility.Collapsed;
+            var reason = exception is IOException && (exception.HResult & 0xffff) is 32 or 33
+                ? "文件暂时被其他程序独占，无法读取。请完成保存后重新预览。"
+                : exception.Message;
+            ShowPreviewFallback(item, $"暂时无法预览 Word 文档\n{reason}");
+        }
+        finally
+        {
+            if (ReferenceEquals(_wordPreviewCancellation, cancellation))
             {
+                _wordPreviewCancellation = null;
+                cancellation.Dispose();
+            }
+        }
+    }
+
+    private async Task ShowTextPreviewAsync(ExplorerItemViewModel item, int previewVersion)
+    {
+        try
+        {
+            if (_activeProject is null) return;
+            var result = await TextPreviewReader.ReadAsync(_activeProject.RootPath, item.FullPath);
+            if (previewVersion != _previewVersion) return;
+            if (result.Text is not string text)
+            {
+                ShowPreviewFallback(item, result.UnavailableReason ?? "无法预览此文件。");
                 return;
             }
 
@@ -4206,7 +4381,7 @@ public sealed partial class MainWindow : Window
                     PreviewMarkdownScroll.Visibility = Visibility.Visible;
                 }
             }
-            else if (IsCodePreviewSupported(item.Item.Extension))
+            else if (TextPreviewReader.IsCode(item.Item.Extension) && text.Length <= 100_000)
             {
                 PreviewWrapButton.IsChecked = _previewTextWrapEnabled;
                 PreviewWrapButton.Visibility = Visibility.Visible;
@@ -4226,7 +4401,7 @@ public sealed partial class MainWindow : Window
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
         {
-            ShowPreviewFallback(item, $"无法读取文本预览\n{exception.Message}");
+            if (previewVersion == _previewVersion) ShowPreviewFallback(item, $"无法读取文本预览\n{exception.Message}");
         }
     }
 
@@ -4484,6 +4659,7 @@ public sealed partial class MainWindow : Window
             }
 
             NavigateTo(targetFolder);
+            await _fileViewRefreshTask;
             if (FindItem(safeTarget) is not { } targetItem)
             {
                 SetStatus("目标文件存在，但当前视图尚未显示它");
@@ -4591,7 +4767,7 @@ public sealed partial class MainWindow : Window
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
         {
-            ShowPreviewFallback(item, $"Windows 无法加载这个媒体文件\n{exception.Message}");
+            if (previewVersion == _previewVersion) ShowPreviewFallback(item, $"Windows 无法加载这个媒体文件\n{exception.Message}");
         }
     }
 
@@ -4604,7 +4780,7 @@ public sealed partial class MainWindow : Window
                 Windows.Storage.FileProperties.ThumbnailMode.SingleItem,
                 1600,
                 Windows.Storage.FileProperties.ThumbnailOptions.UseCurrentScale);
-            if (previewVersion != _previewVersion || thumbnail.Size == 0)
+            if (previewVersion != _previewVersion || thumbnail is null || thumbnail.Size == 0)
             {
                 return false;
             }
@@ -4626,27 +4802,9 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private static bool IsTextPreviewSupported(string extension) => extension.ToLowerInvariant() switch
-    {
-        ".c" or ".cpp" or ".cs" or ".css" or ".csv" or ".go" or ".h" or ".hpp" or ".html" or
-        ".java" or ".js" or ".json" or ".jsx" or ".kt" or ".lua" or ".md" or ".markdown" or ".php" or ".ps1" or
-        ".py" or ".rb" or ".rs" or ".sql" or ".swift" or ".ts" or ".tsx" or ".txt" or ".xml" or
-        ".xaml" or ".yaml" or ".yml" => true,
-        _ => false
-    };
-
     private static bool IsMarkdownExtension(string extension) => extension.ToLowerInvariant() switch
     {
         ".md" or ".markdown" => true,
-        _ => false
-    };
-
-    private static bool IsCodePreviewSupported(string extension) => extension.ToLowerInvariant() switch
-    {
-        ".c" or ".cpp" or ".cs" or ".css" or ".go" or ".h" or ".hpp" or ".html" or
-        ".java" or ".js" or ".json" or ".jsx" or ".kt" or ".lua" or ".php" or ".ps1" or
-        ".py" or ".rb" or ".rs" or ".sql" or ".swift" or ".ts" or ".tsx" or ".xml" or
-        ".xaml" or ".yaml" or ".yml" => true,
         _ => false
     };
 
@@ -4702,6 +4860,7 @@ public sealed partial class MainWindow : Window
                 MarkdownPreviewBlockKind.NumberedListItem => CreateMarkdownListItem(block, ordered: true),
                 MarkdownPreviewBlockKind.Quote => CreateMarkdownQuote(block),
                 MarkdownPreviewBlockKind.Code => CreateMarkdownCodeBlock(block),
+                MarkdownPreviewBlockKind.Table when block.Table is { } table => CreateMarkdownTable(table),
                 MarkdownPreviewBlockKind.HorizontalRule => new Border
                 {
                     Height = 1,
@@ -4712,6 +4871,36 @@ public sealed partial class MainWindow : Window
             };
             PreviewMarkdownDocument.Children.Add(element);
         }
+    }
+
+    private Grid CreateMarkdownTable(MarkdownTable table)
+    {
+        var grid = new Grid { Margin = new Thickness(0, 12, 0, 12) };
+        for (var column = 0; column < table.Headers.Count; column++)
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        for (var row = 0; row <= table.Rows.Count; row++)
+        {
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            for (var column = 0; column < table.Headers.Count; column++)
+            {
+                var text = CreateMarkdownTextBlock(row == 0 ? table.Headers[column] : table.Rows[row - 1][column],
+                    14, row == 0 ? FontWeights.SemiBold : FontWeights.Normal,
+                    (Brush)Application.Current.Resources[row == 0 ? "HubTextBrush" : "HubTextSecondaryBrush"]);
+                text.TextWrapping = TextWrapping.Wrap;
+                text.TextAlignment = table.Alignments[column] switch
+                { "center" => TextAlignment.Center, "right" => TextAlignment.Right, _ => TextAlignment.Left };
+                var cell = new Border
+                {
+                    Padding = new Thickness(10, 8, 10, 8), BorderThickness = new Thickness(0.5),
+                    BorderBrush = (Brush)Application.Current.Resources["HubBorderBrush"], Child = text
+                };
+                if (row == 0) cell.Background = (Brush)Application.Current.Resources["HubRaisedBrush"];
+                Grid.SetRow(cell, row);
+                Grid.SetColumn(cell, column);
+                grid.Children.Add(cell);
+            }
+        }
+        return grid;
     }
 
     private TextBlock CreateMarkdownHeading(MarkdownPreviewBlock block)

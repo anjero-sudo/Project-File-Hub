@@ -10,14 +10,27 @@
 </p>
 
 <p align="center">
-  <img alt="Version 0.0.6" src="https://img.shields.io/badge/version-0.0.6-0ea5e9" />
+  <img alt="Version 0.0.7" src="https://img.shields.io/badge/version-0.0.7-0ea5e9" />
   <img alt="Windows 11 x64" src="https://img.shields.io/badge/platform-Windows%2011%20x64-2563eb" />
   <img alt=".NET 10" src="https://img.shields.io/badge/.NET-10.0-7c3aed" />
   <img alt="Status Development Preview" src="https://img.shields.io/badge/status-development%20preview-f59e0b" />
 </p>
 
 > [!IMPORTANT]
-> `0.0.6` 是开发预览版本，适合本机试用和继续开发。GitHub Release 同时提供当前用户安装版 `Setup.exe` 和解压即用的便携 ZIP；两种产物都有 SHA-256 校验文件。安装器目前尚未进行代码签名，Windows SmartScreen 可能显示“未知发布者”。
+> `0.0.7` 是开发预览版本，适合本机试用和继续开发。GitHub Release 同时提供当前用户安装版 `Setup.exe` 和解压即用的便携 ZIP；两种产物都有 SHA-256 校验文件。安装器目前尚未进行代码签名，Windows SmartScreen 可能显示“未知发布者”。
+
+## 0.0.7 更新
+
+- Markdown 表格保留表头、列对齐和独立行，长文字在单元格内换行，分镜表不会再挤成一整段；支持转义竖线、单元格内强调和项目内链接。
+- 文件夹上方提供文件名和中文首拼搜索（例如 `rw` 匹配“人物”、`xmzj` 匹配“项目总结”）：`Ctrl+F` 定位搜索框，支持名称/扩展名片段，不区分大小写；`Esc` 清空搜索。搜索与当前类型筛选共同生效，开启“含子文件夹”时也筛选该范围的结果。
+- “返回上一级”按钮与 `Alt+↑` 始终停在当前项目根目录以内。
+- 顶部项目选择框保持 270 像素固定宽度，项目管理列表只显示名称或别名；项目管理中可以修改显示别名，默认仍为添加时的文件夹名称，不会重命名磁盘目录。
+- Astro、Git 配置和目录中未登记扩展名的 Unicode 文本可预览；二进制、不支持的编码或超过 1.5 MB 的文件显示明确提示。未知文本不会执行代码或调用第三方缩略图提供程序。
+- Word `.doc`（Word 97 及更新版本）和 `.docx` 支持只读正文、段落和表格文字预览，可选择复制；不还原图片、页眉页脚或原始版式。长文档只显示前 20 万字符，64 MB 以上、密码保护、损坏和更早格式的文件显示提示。
+- Word 文档正在编辑时可预览已保存的正文；`~$` 临时锁文件会明确提示选择原始文档。文档、文本、代码和文件夹摘要使用与 Markdown 一致的居中阅读区域。
+- 首拼使用单字常用读音，保留名称中的英文、数字、分隔符和扩展名；不保证多音字的所有读音都能匹配。
+- 预览失败会记录文件路径和异常代码并回退到提示界面；快速切换或关闭预览后不会显示旧请求的结果。
+
 
 ## 为什么做这个项目
 
@@ -25,7 +38,7 @@ Windows 资源管理器适合浏览整个系统，却不一定适合长期管理
 
 它不是 Windows Shell 的完整替代品，也不是知识库，而是一套更专注、更稳定的项目文件工作流。
 
-## 0.0.6 功能概览
+## 0.0.7 功能概览
 
 - **项目级工作空间**：可以登记多个项目，但同一时间只激活一个；所有导航和文件操作都受当前项目根目录约束。
 - **可靠的项目记忆**：项目列表使用带修订号的主记录、独立 Roaming 备份和上一版本快照；主记录被清空、损坏或丢失时可以恢复。
@@ -81,8 +94,8 @@ Markdown 中使用标准链接即可把提示词和项目图片关联起来。�
 
 正式 Release 提供两种 Windows x64 交付方式：
 
-- `ProjectFileHub-Setup-0.0.6-win-x64.exe`：推荐给普通用户。默认安装到 `%LOCALAPPDATA%\Programs\ProjectFileHub`，创建开始菜单快捷方式并可选择桌面快捷方式，同时登记标准卸载入口。
-- `ProjectFileHub-0.0.6-win-x64.zip`：便携版。解压后直接运行 `ProjectFileHub.exe`，不登记安装与卸载信息。
+- `ProjectFileHub-Setup-0.0.7-win-x64.exe`：推荐给普通用户。默认安装到 `%LOCALAPPDATA%\Programs\ProjectFileHub`，创建开始菜单快捷方式并可选择桌面快捷方式，同时登记标准卸载入口。
+- `ProjectFileHub-0.0.7-win-x64.zip`：便携版。解压后直接运行 `ProjectFileHub.exe`，不登记安装与卸载信息。
 
 安装器把可替换的自包含程序放在安装目录的 `app` 子目录中。升级时只清理这个由安装器拥有的程序区，避免旧运行时文件残留；位于 `%LOCALAPPDATA%\ProjectFileHub` 和 `%APPDATA%\Anjero\ProjectFileHub` 的项目列表、设置、备份与索引不会被升级或卸载删除。安装器使用稳定 AppId，因此后续版本会沿用用户之前选择的安装位置并原位升级。
 
@@ -106,7 +119,7 @@ Markdown 中使用标准链接即可把提示词和项目图片关联起来。�
 # 还原并构建完整解决方案
 .\eng\build.ps1
 
-# 在本机生成 0.0.6 便携 ZIP 与 SHA-256（不会上传）
+# 在本机生成 0.0.7 便携 ZIP 与 SHA-256（不会上传）
 .\eng\package-release.ps1
 
 # 使用已有便携发布目录生成 Setup.exe 与 SHA-256

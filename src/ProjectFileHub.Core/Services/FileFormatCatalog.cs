@@ -69,7 +69,7 @@ public static class FileFormatCatalog
             ".htm", ".html", ".mht", ".mhtml", ".url", ".webarchive");
 
         AddPerExtension(formats, FileItemCategory.Code, FileVisualKind.Data, "数据",
-            ".cfg", ".conf", ".env", ".ini", ".json", ".jsonc", ".lock", ".plist", ".properties", ".toml", ".xml", ".yaml", ".yml");
+            ".cfg", ".conf", ".env", ".gitignore", ".gitattributes", ".gitmodules", ".gitconfig", ".editorconfig", ".ini", ".json", ".jsonc", ".lock", ".plist", ".properties", ".toml", ".xml", ".yaml", ".yml");
         AddFamily(formats, FileItemCategory.Other, FileVisualKind.Database, "数据库", "DB",
             ".accdb", ".db", ".db3", ".mdb", ".sqlite", ".sqlite3");
 

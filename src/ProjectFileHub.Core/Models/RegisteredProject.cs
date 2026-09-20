@@ -6,6 +6,8 @@ public sealed record RegisteredProject(
     string RootPath,
     DateTimeOffset AddedAt)
 {
+    public override string ToString() => Name;
+
     public static RegisteredProject Create(string rootPath)
     {
         var normalizedRoot = PathBoundary.NormalizeRoot(rootPath);

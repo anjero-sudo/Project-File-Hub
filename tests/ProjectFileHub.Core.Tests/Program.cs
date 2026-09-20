@@ -1,3 +1,6 @@
+using System.Buffers.Binary;
+using System.IO.Compression;
+using RootStorage = OpenMcdf.RootStorage;
 using System.Net;
 using System.Text;
 using ProjectFileHub.Core;
@@ -6,6 +9,14 @@ using ProjectFileHub.Core.Services;
 
 var tests = new (string Name, Func<Task> Run)[]
 {
+    ("DOCX preview reads Chinese paragraphs and table cells without loading links", TestDocxPreview),
+    ("DOC preview reads Unicode and compressed pieces and excludes field instructions", TestDocPreview),
+    ("Word preview rejects corrupt, encrypted, oversized and escaping documents", TestWordPreviewGuards),
+    ("Word preview reads saved content while an editor is open and identifies owner files", TestWordOpenDocument),
+    ("Filename initials search matches Chinese folders and mixed filenames", TestPinyinSearch),
+    ("Text preview accepts source and unknown Unicode but rejects binary, oversized and escaping paths", TestTextPreviewReader),
+    ("Folder name search composes with type filters and parent navigation stops at root", TestSearchAndParent),
+    ("Project aliases persist without changing roots or active identity", TestProjectAlias),
     ("Path boundary accepts the root and descendants", TestBoundaryAcceptsRootAndDescendants),
     ("Path boundary rejects prefix siblings and traversal", TestBoundaryRejectsEscapes),
     ("Natural sort orders numeric filename segments", TestNaturalSort),
@@ -19,6 +30,7 @@ var tests = new (string Name, Func<Task> Run)[]
     ("Batch copy preserves all selections and keep-both paste", TestBatchCopy),
     ("Markdown preview parses reading structure without resolving content", TestMarkdownPreviewParser),
     ("Markdown HTML preview encodes source and exposes safe reading interactions", TestMarkdownHtmlRenderer),
+    ("Markdown tables preserve rows, alignment, escaped pipes and safe cell markup", TestMarkdownTables),
     ("Markdown project links resolve relative files without escaping the project", TestMarkdownProjectLinkResolver),
     ("GitHub release checks compare versions without accepting untrusted links", TestGitHubReleaseUpdateService),
     ("Code preview tokenization preserves text and identifies Monokai token roles", TestCodePreviewTokenizer),
@@ -29,6 +41,33 @@ var tests = new (string Name, Func<Task> Run)[]
     ("Recycle planning protects the project root and nested selections", TestRecyclePlanning),
     ("SQLite project index scans subfolders and tracks new files", TestProjectIndex)
 };
+
+if (args.Length == 3 && args[0] == "--markdown-preview")
+{
+    var markdown = await File.ReadAllTextAsync(args[1]);
+    await File.WriteAllTextAsync(args[2], MarkdownHtmlRenderer.Render(markdown, MarkdownHtmlTheme.WarmGraphite, wrapCodeBlocks: true));
+    var tables = MarkdownPreviewParser.Parse(markdown).Where(block => block.Table is not null).Select(block => block.Table!).ToArray();
+    Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new { tables = tables.Length, rows = tables.Sum(table => table.Rows.Count), columns = tables.Select(table => table.Headers.Count).ToArray() }));
+    return 0;
+}
+
+if (args.Length == 2 && args[0] == "--word-fixtures")
+{
+    var root = Path.GetFullPath(args[1]);
+    foreach (var file in Directory.EnumerateFiles(root).Where(path => WordPreviewReader.Supports(Path.GetExtension(path))))
+    {
+        try
+        {
+            var result = await WordPreviewReader.ReadAsync(root, file);
+            Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new { file = Path.GetFileName(file), result.Text, result.IsTruncated }));
+        }
+        catch (Exception exception)
+        {
+            Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new { file = Path.GetFileName(file), error = exception.Message }));
+        }
+    }
+    return 0;
+}
 
 var failures = new List<string>();
 
@@ -48,6 +87,239 @@ foreach (var test in tests)
 
 Console.WriteLine($"\n{tests.Length - failures.Count}/{tests.Length} tests passed.");
 return failures.Count == 0 ? 0 : 1;
+
+static void CreateDocxFixture(string path, string body)
+{
+    using var zip = ZipFile.Open(path, ZipArchiveMode.Create);
+    using var writer = new StreamWriter(zip.CreateEntry("word/document.xml").Open(), new UTF8Encoding(false));
+    writer.Write("<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body>" + body + "</w:body></w:document>");
+}
+
+static async Task TestDocxPreview()
+{
+    using var workspace = TemporaryWorkspace.Create();
+    var path = Path.Combine(workspace.Root, "正文.docx");
+    CreateDocxFixture(path, """
+        <w:p><w:r><w:t>中文标题</w:t></w:r></w:p>
+        <w:p><w:r><w:t xml:space="preserve">第一段 &lt;script&gt; 保留文字 </w:t><w:tab/><w:t>结尾</w:t></w:r></w:p>
+        <w:tbl><w:tr><w:tc><w:p><w:r><w:t>姓名</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>分数</w:t></w:r></w:p></w:tc></w:tr>
+        <w:tr><w:tc><w:p><w:r><w:t>小明</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>98</w:t></w:r></w:p></w:tc></w:tr></w:tbl>
+        <w:p><w:del><w:r><w:delText>已删除</w:delText></w:r></w:del><w:r><w:instrText>INCLUDETEXT secret</w:instrText><w:t>最后一段</w:t></w:r></w:p>
+        """);
+    var original = await File.ReadAllBytesAsync(path);
+    var result = await WordPreviewReader.ReadAsync(workspace.Root, path);
+    Assert(result.Text == "中文标题\n第一段 <script> 保留文字 \t结尾\n姓名\t分数\n小明\t98\n最后一段", "Paragraph and table reading order must be preserved; deleted text and field instructions must be excluded.");
+    Assert(!result.IsTruncated, "Small document must be complete.");
+    var afterPreview = await File.ReadAllBytesAsync(path);
+    Assert(original.SequenceEqual(afterPreview), "Preview must not modify the document.");
+    var longPath = Path.Combine(workspace.Root, "long.docx");
+    CreateDocxFixture(longPath, "<w:p><w:r><w:t>" + new string('中', WordPreviewReader.MaximumCharacters + 10) + "</w:t></w:r></w:p>");
+    var longResult = await WordPreviewReader.ReadAsync(workspace.Root, longPath);
+    Assert(longResult.IsTruncated && longResult.Text.Length == WordPreviewReader.MaximumCharacters, "Long documents must have bounded output and an explicit truncation notice.");
+}
+
+static void CreateDocFixture(string path, string first, string second, bool encrypted = false, bool invalidPiece = false)
+{
+    var firstBytes = Encoding.Latin1.GetBytes(first);
+    var secondBytes = Encoding.Unicode.GetBytes(second);
+    var word = new byte[1024 + firstBytes.Length + secondBytes.Length];
+    void W16(int offset, ushort value) => BinaryPrimitives.WriteUInt16LittleEndian(word.AsSpan(offset), value);
+    void W32(int offset, uint value) => BinaryPrimitives.WriteUInt32LittleEndian(word.AsSpan(offset), value);
+    W16(0, 0xA5EC); W16(2, 0xC1); W16(10, (ushort)(0x200 | (encrypted ? 0x100 : 0)));
+    W16(32, 14); W16(62, 22); W32(76, (uint)(first.Length + second.Length)); W16(152, 93);
+    // FibRgFcLcb97 pair 33, CLX contains a Pcdt with two pieces.
+    W32(418, 0); W32(422, 33);
+    firstBytes.CopyTo(word, 1024); secondBytes.CopyTo(word, 1024 + firstBytes.Length);
+    var table = new byte[33];
+    table[0] = 2;
+    void T32(int offset, uint value) => BinaryPrimitives.WriteUInt32LittleEndian(table.AsSpan(offset), value);
+    T32(1, 28); T32(5, 0); T32(9, (uint)first.Length); T32(13, (uint)(first.Length + second.Length));
+    T32(19, 0x40000000 | 2048u); T32(27, invalidPiece ? uint.MaxValue : (uint)(1024 + firstBytes.Length));
+    using var root = RootStorage.Create(path);
+    using (var wordStream = root.CreateStream("WordDocument")) wordStream.Write(word);
+    using (var tableStream = root.CreateStream("1Table")) tableStream.Write(table);
+    root.Flush();
+}
+
+static async Task TestDocPreview()
+{
+    using var workspace = TemporaryWorkspace.Create();
+    var path = Path.Combine(workspace.Root, "旧文档.doc");
+    CreateDocFixture(path, "Title\rA\x07" + "B\r", "中文正文\r\x13" + "HYPERLINK secret\x14显示结果\x15\r第二段");
+    var original = await File.ReadAllBytesAsync(path);
+    var result = await WordPreviewReader.ReadAsync(workspace.Root, path);
+    Assert(result.Text == "Title\nA\tB\n中文正文\n显示结果\n第二段", "DOC pieces must preserve Chinese, paragraphs, cells and field display results.");
+    var afterPreview = await File.ReadAllBytesAsync(path);
+    Assert(original.SequenceEqual(afterPreview), "Legacy DOC preview must be read-only.");
+}
+
+static async Task TestWordOpenDocument()
+{
+    using var workspace = TemporaryWorkspace.Create();
+    var path = Path.Combine(workspace.Root, "正在编辑.docx");
+    CreateDocxFixture(path, "<w:p><w:r><w:t>已经保存的正文</w:t></w:r></w:p>");
+    var original = await File.ReadAllBytesAsync(path);
+    using (var editor = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.Read))
+    {
+        var result = await WordPreviewReader.ReadAsync(workspace.Root, path);
+        Assert(result.Text == "已经保存的正文", "An existing editor writer handle must not block read-only saved-content preview.");
+    }
+    var afterPreview = await File.ReadAllBytesAsync(path);
+    Assert(original.SequenceEqual(afterPreview), "Open-document preview must not alter the source bytes.");
+    var doc = Path.Combine(workspace.Root, "正在编辑.doc");
+    CreateDocFixture(doc, "Title\r", "已经保存的旧文档");
+    using (var editor = new FileStream(doc, FileMode.Open, FileAccess.ReadWrite, FileShare.Read))
+        Assert((await WordPreviewReader.ReadAsync(workspace.Root, doc)).Text.Contains("已经保存的旧文档"), "DOC snapshots must also support open editors.");
+    var owner = Path.Combine(workspace.Root, "~$正在编辑.docx");
+    await File.WriteAllBytesAsync(owner, new byte[162]);
+    var ownerRejected = false;
+    try { await WordPreviewReader.ReadAsync(workspace.Root, owner); }
+    catch (NotSupportedException ex) { ownerRejected = ex.Message == WordPreviewReader.TemporaryFileMessage; }
+    Assert(ownerRejected, "Word owner files must receive a precise temporary-file explanation.");
+    using (var exclusive = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+    {
+        var rejected = false;
+        try { await WordPreviewReader.ReadAsync(workspace.Root, path); }
+        catch (IOException) { rejected = true; }
+        Assert(rejected, "A genuinely exclusive writer must remain protected.");
+    }
+}
+
+static async Task TestWordPreviewGuards()
+{
+    using var workspace = TemporaryWorkspace.Create();
+    async Task Reject(string path)
+    {
+        var rejected = false;
+        try { await WordPreviewReader.ReadAsync(workspace.Root, path); }
+        catch (Exception exception) when (exception is IOException or InvalidDataException or NotSupportedException or UnauthorizedAccessException or System.Xml.XmlException)
+        { rejected = true; }
+        Assert(rejected, $"Unsafe/unsupported document must be rejected: {path}");
+    }
+    var encrypted = Path.Combine(workspace.Root, "encrypted.doc");
+    CreateDocFixture(encrypted, "a", "中文", encrypted: true);
+    await Reject(encrypted);
+    var corrupt = Path.Combine(workspace.Root, "corrupt.doc");
+    CreateDocFixture(corrupt, "a", "中文", invalidPiece: true);
+    await Reject(corrupt);
+    var malformed = Path.Combine(workspace.Root, "malformed.docx");
+    await File.WriteAllTextAsync(malformed, "not a word document");
+    await Reject(malformed);
+    var entity = Path.Combine(workspace.Root, "entity.docx");
+    using (var zip = ZipFile.Open(entity, ZipArchiveMode.Create))
+    using (var writer = new StreamWriter(zip.CreateEntry("word/document.xml").Open()))
+        writer.Write("<!DOCTYPE root [<!ENTITY e SYSTEM 'file:///C:/secret'>]><root>&e;</root>");
+    await Reject(entity);
+    var oversized = Path.Combine(workspace.Root, "large.doc");
+    using (var file = File.Create(oversized)) file.SetLength(WordPreviewReader.MaximumFileBytes + 1L);
+    await Reject(oversized);
+    await Reject(Path.Combine(workspace.Root, "..", "outside.docx"));
+    using var cancel = new CancellationTokenSource();
+    cancel.Cancel();
+    var cancelled = false;
+    try { await WordPreviewReader.ReadAsync(workspace.Root, encrypted, cancel.Token); }
+    catch (OperationCanceledException) { cancelled = true; }
+    Assert(cancelled, "Canceled Word preview must not keep parsing.");
+}
+
+static Task TestPinyinSearch()
+{
+    Assert(FileNameSearch.Matches("人物素材", "rw"), "Folder initials must match.");
+    Assert(FileNameSearch.Matches("项目总结.docx", "XMZJ"), "Initials must be case-insensitive.");
+    Assert(FileNameSearch.Matches("EP01_人物设定_v2.doc", "rwSD"), "Mixed names must support initials substrings.");
+    Assert(FileNameSearch.Matches("人物设定.docx", "rwsd.docx"), "Extension suffix must remain searchable with initials.");
+    Assert(FileNameSearch.Matches("人物设定", "人物") && FileNameSearch.Matches("Hero.ASTRO", ".astro"), "Literal search must remain unchanged.");
+    Assert(!FileNameSearch.Matches("人物素材", "zzzz"), "Unrelated initials must not match.");
+    Assert(!FileNameSearch.Matches("Report", "rp"), "English words must not collapse to initials.");
+    using var workspace = TemporaryWorkspace.Create();
+    Directory.CreateDirectory(Path.Combine(workspace.Root, "人物素材"));
+    File.WriteAllText(Path.Combine(workspace.Root, "人物设定.docx"), "fixture");
+    var browser = new FileSystemBrowser();
+    Assert(browser.GetItems(workspace.Root, workspace.Root, new FileQueryOptions(SearchText: "rw")).Count == 2, "Initials search must include both folders and files.");
+    Assert(browser.GetItems(workspace.Root, workspace.Root, new FileQueryOptions(Category: FileItemCategory.Document, SearchText: "rw")).Count == 1, "Initials and category filtering must compose.");
+    return Task.CompletedTask;
+}
+
+static async Task TestTextPreviewReader()
+{
+    using var workspace = TemporaryWorkspace.Create();
+    const string content = "---\nconst title = '你好';\n---\n<h1>{title}</h1>";
+    foreach (var name in new[] { "page.astro", ".gitignore", ".gitattributes", "HEAD", "LICENSE", "notes.unregistered" })
+    {
+        var path = Path.Combine(workspace.Root, name);
+        await File.WriteAllTextAsync(path, content);
+        var result = await TextPreviewReader.ReadAsync(workspace.Root, path);
+        Assert(result.Text == content, $"{name} must be previewable without source execution.");
+    }
+    Assert(TextPreviewReader.IsKnownText(".astro") && TextPreviewReader.IsCode(".astro"), "Astro must use the catalog's code preview.");
+    var unicode = Path.Combine(workspace.Root, "utf16.unknown");
+    await File.WriteAllTextAsync(unicode, "中文文本\r\n第二行", Encoding.Unicode);
+    Assert((await TextPreviewReader.ReadAsync(workspace.Root, unicode)).Text == "中文文本\r\n第二行", "BOM-marked UTF-16 must be decoded.");
+    var binary = Path.Combine(workspace.Root, "binary.unknown");
+    await File.WriteAllBytesAsync(binary, [0, 1, 2, 255]);
+    Assert((await TextPreviewReader.ReadAsync(workspace.Root, binary)).Text is null, "Binary must fall back without decoding garbage.");
+    await File.WriteAllBytesAsync(binary, [0xC3, 0x28]);
+    Assert((await TextPreviewReader.ReadAsync(workspace.Root, binary)).Text is null, "Invalid UTF-8 must not silently become replacement characters.");
+    await File.WriteAllBytesAsync(binary, new byte[TextPreviewReader.MaximumBytes + 1]);
+    Assert((await TextPreviewReader.ReadAsync(workspace.Root, binary)).Text is null, "Oversized files must not render.");
+    await File.WriteAllTextAsync(binary, "");
+    Assert((await TextPreviewReader.ReadAsync(workspace.Root, binary)).Text == "", "Empty files are valid text.");
+    var blocked = false;
+    try { await TextPreviewReader.ReadAsync(workspace.Root, Path.Combine(workspace.Root, "..", "outside.txt")); }
+    catch (UnauthorizedAccessException) { blocked = true; }
+    Assert(blocked, "Text sniffing must not escape the project.");
+    using var cancellation = new CancellationTokenSource();
+    cancellation.Cancel();
+    var canceled = false;
+    try { await TextPreviewReader.ReadAsync(workspace.Root, binary, cancellation.Token); }
+    catch (OperationCanceledException) { canceled = true; }
+    Assert(canceled, "Text reads must respect cancellation.");
+}
+
+static Task TestSearchAndParent()
+{
+    using var workspace = TemporaryWorkspace.Create();
+    var child = Directory.CreateDirectory(Path.Combine(workspace.Root, "child"));
+    File.WriteAllText(Path.Combine(workspace.Root, "Hero.ASTRO"), "source");
+    File.WriteAllText(Path.Combine(workspace.Root, "hero.txt"), "text");
+    File.WriteAllText(Path.Combine(child.FullName, "hero-nested.astro"), "nested");
+    var browser = new FileSystemBrowser();
+    var result = browser.GetItems(workspace.Root, workspace.Root, new FileQueryOptions(SearchText: " HERO "));
+    Assert(result.Count == 2, "Case-insensitive trimmed name search must stay in the current folder.");
+    result = browser.GetItems(workspace.Root, workspace.Root, new FileQueryOptions(Category: FileItemCategory.Code, SearchText: "hero"));
+    Assert(result.Count == 1 && result[0].Name == "Hero.ASTRO", "Search must compose with category filtering.");
+    Assert(browser.GetItems(workspace.Root, workspace.Root, new FileQueryOptions(SearchText: "missing")).Count == 0, "No matches must return an empty result.");
+    Assert(browser.GetParentFolder(workspace.Root, child.FullName) == workspace.Root, "Up must navigate exactly one level.");
+    Assert(browser.GetParentFolder(workspace.Root, workspace.Root) is null, "Up must stop at root.");
+    AssertThrows<UnauthorizedAccessException>(() => browser.GetParentFolder(workspace.Root, Path.Combine(workspace.Root, "..")));
+    return Task.CompletedTask;
+}
+
+static async Task TestProjectAlias()
+{
+    using var workspace = TemporaryWorkspace.Create();
+    var root = Directory.CreateDirectory(Path.Combine(workspace.Root, "original"));
+    var path = Path.Combine(workspace.Root, "registry.json");
+    var store = new ProjectRegistryStore(path);
+    var initial = await store.AddAsync(root.FullName);
+    var project = initial.ActiveProject!;
+    Assert(project.ToString() == "original", "Fallback display must be a friendly project name, never record internals.");
+    Assert(project.Name == "original", "Adding a project must keep the default directory name.");
+    await store.RenameAsync(project.Id, "  项目别名  ");
+    var loaded = await new ProjectRegistryStore(path).LoadAsync();
+    Assert(loaded.ActiveProject?.Id == project.Id && loaded.ActiveProject.Name == "项目别名", "Alias must survive reload without changing active identity.");
+    Assert(loaded.ActiveProject!.RootPath == root.FullName && Directory.Exists(root.FullName), "Alias must not rename the directory.");
+    Assert((await store.AddAsync(root.FullName)).ActiveProject!.Name == "项目别名", "Re-registering a path must preserve its alias.");
+    File.WriteAllText(path, "broken");
+    Assert((await new ProjectRegistryStore(path).LoadAsync()).ActiveProject!.Name == "项目别名", "Backup recovery must preserve the alias.");
+    foreach (var invalid in new[] { " ", "bad\nname", new string('x', 81) })
+    {
+        var rejected = false;
+        try { await store.RenameAsync(project.Id, invalid); }
+        catch (ArgumentException) { rejected = true; }
+        Assert(rejected, "Invalid aliases must be rejected before mutation.");
+    }
+}
 
 static Task TestBoundaryAcceptsRootAndDescendants()
 {
@@ -524,6 +796,37 @@ static Task TestMarkdownPreviewParser()
     Assert(blocks.All(block => !block.Text.Contains("http://", StringComparison.OrdinalIgnoreCase)
                                && !block.Text.Contains("https://", StringComparison.OrdinalIgnoreCase)),
         "The parser must not introduce or resolve external content.");
+    return Task.CompletedTask;
+}
+
+static Task TestMarkdownTables()
+{
+    const string source = """
+        # 分镜表
+
+        |镜号|对白|参考|
+        |:---|:---:|---:|
+        |S01|中文 **加粗** 与 `x\|y`|[图片](assets/a.png)|
+        |S02|甲\|乙 <script>alert(1)</script>|K02|
+        |S03|缺一列|
+        |S04|完整|K04|多余列|
+
+        表格后正文。
+        """;
+    var blocks = MarkdownPreviewParser.Parse(source);
+    var table = blocks.Single(block => block.Kind == MarkdownPreviewBlockKind.Table).Table!;
+    Assert(table.Headers.SequenceEqual(new[] { "镜号", "对白", "参考" }), "Header columns must stay distinct.");
+    Assert(table.Rows.Count == 4 && table.Rows[0][1].Contains("`x|y`") && table.Rows[1][1].StartsWith("甲|乙"), "Rows and escaped cell pipes must survive parsing.");
+    Assert(table.Alignments.SequenceEqual(new[] { "left", "center", "right" }), "Delimiter alignment markers must be honored.");
+    Assert(table.Rows[2][2] == string.Empty && table.Rows[3].Count == 3, "Uneven rows must normalize to the header width.");
+    Assert(blocks.Last().Text == "表格后正文。", "A table must stop at the following paragraph.");
+    var html = MarkdownHtmlRenderer.Render(source);
+    Assert(html.Split("<tr>").Length - 1 == 5 && html.Contains("<th scope=\"col\"") && html.Contains("<td class=\"align-center\">"), "Rendered tables must have a semantic header and one row per record.");
+    Assert(html.Contains("<strong>加粗</strong>") && html.Contains("data-pfh-href=\"assets/a.png\"") && html.Contains("&lt;script&gt;") && !html.Contains("<script>alert(1)</script>"), "Cell formatting and bounded links must work without raw HTML execution.");
+    Assert(!MarkdownPreviewParser.Parse("甲|乙\n不是|分隔线").Any(block => block.Kind == MarkdownPreviewBlockKind.Table), "Pipes alone must not create a table.");
+    Assert(MarkdownPreviewParser.Parse("```text\n|甲|乙|\n|---|---|\n|1|2|\n```").Single().Kind == MarkdownPreviewBlockKind.Code, "Fenced source must stay literal code.");
+    var noOuterPipes = MarkdownPreviewParser.Parse("甲 | 乙\n--- | ---\n一 | 二").Single().Table!;
+    Assert(noOuterPipes.Rows.Single()[1] == "二", "Tables without outer pipes must parse.");
     return Task.CompletedTask;
 }
 

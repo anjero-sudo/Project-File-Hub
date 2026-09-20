@@ -56,14 +56,22 @@
                         Spacing="7"
                         VerticalAlignment="Center">
                 <ComboBox x:Name="ProjectPicker"
-                          MinWidth="132"
+                          Width="270"
+                          MinWidth="270"
+                          MaxWidth="270"
                           MaxDropDownHeight="320"
                           HorizontalAlignment="Left"
                           Style="{StaticResource HubCompactComboBoxStyle}"
                           PlaceholderText="选择项目"
-                          DisplayMemberPath="Name"
                           SelectionChanged="OnProjectSelectionChanged"
-                          VerticalAlignment="Center" />
+                          VerticalAlignment="Center">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding Name}" MaxWidth="230" TextTrimming="CharacterEllipsis"
+                                       ToolTipService.ToolTip="{Binding RootPath}" />
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
                 <Border Padding="7,2"
                         CornerRadius="8"
                         Background="{StaticResource HubRaisedBrush}"
@@ -85,15 +93,6 @@
                        Foreground="{StaticResource HubTextSecondaryBrush}"
                        TextTrimming="CharacterEllipsis"
                        VerticalAlignment="Center" />
-
-            <TextBox x:Name="SearchBox"
-                     Grid.Column="4"
-                     Width="260"
-                     Height="36"
-                     PlaceholderText="搜索当前文件夹"
-                     VerticalAlignment="Center"
-                     IsEnabled="False"
-                     Visibility="Collapsed" />
 
             <Button Grid.Column="5"
                     Margin="10,0,0,0"
@@ -278,8 +277,26 @@
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
-                <StackPanel>
-                    <TextBlock x:Name="FolderTitle" Text="欢迎" FontSize="26" FontWeight="SemiBold" Foreground="{StaticResource HubTextBrush}" />
+                <StackPanel Spacing="10">
+                    <Grid ColumnSpacing="10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Button x:Name="UpFolderButton" IsEnabled="False" Click="OnUpFolderClicked"
+                                Style="{StaticResource HubIconButtonStyle}"
+                                AutomationProperties.Name="返回上一级" ToolTipService.ToolTip="返回上一级（Alt+↑）">
+                            <FontIcon Glyph="&#xE74A;" FontSize="14" />
+                        </Button>
+                        <TextBox x:Name="SearchBox" Grid.Column="1" Height="34" IsEnabled="False"
+                                 PlaceholderText="搜索名称 / 首拼 / 扩展名 · Ctrl+F"
+                                 AutomationProperties.Name="按名称或中文首拼搜索当前文件夹"
+                                 ToolTipService.ToolTip="支持中文、首拼（如 rw 匹配人物）、英文与扩展名；搜索当前筛选范围。Esc 清空。"
+                                 TextChanged="OnSearchTextChanged" KeyDown="OnSearchKeyDown"
+                                 Background="{StaticResource HubRaisedBrush}" Foreground="{StaticResource HubTextBrush}"
+                                 BorderBrush="{StaticResource HubBorderBrush}" CornerRadius="7" />
+                    </Grid>
+                    <TextBlock x:Name="FolderTitle" Text="欢迎" FontSize="26" FontWeight="SemiBold" Foreground="{StaticResource HubTextBrush}" TextTrimming="CharacterEllipsis" />
                     <TextBlock x:Name="FolderSubtitle" Text="添加一个本机项目开始管理" Margin="0,5,0,0" FontSize="13" Foreground="{StaticResource HubTextMutedBrush}" />
                 </StackPanel>
 
@@ -859,10 +876,16 @@
                                             AutoPlay="False"
                                             Visibility="Collapsed" />
                         <ScrollViewer x:Name="PreviewTextScroll"
-                                      Margin="28,24"
+                                      Margin="72,56,72,92"
+                                      MaxWidth="920"
+                                      HorizontalAlignment="Stretch"
+                                      HorizontalContentAlignment="Stretch"
                                       HorizontalScrollBarVisibility="Auto"
                                       VerticalScrollBarVisibility="Auto"
                                       Visibility="Collapsed">
+                            <StackPanel Spacing="14">
+                            <TextBlock x:Name="PreviewWordNotice" Visibility="Collapsed" FontSize="12"
+                                       Foreground="{StaticResource HubTextMutedBrush}" TextWrapping="Wrap" />
                             <TextBlock x:Name="PreviewText"
                                        FontFamily="Cascadia Mono, Consolas"
                                        FontSize="13"
@@ -877,9 +900,12 @@
                                     </MenuFlyout>
                                 </TextBlock.ContextFlyout>
                             </TextBlock>
+                            </StackPanel>
                         </ScrollViewer>
                         <Border x:Name="PreviewCodeSurface"
-                                Margin="88,24"
+                                Margin="72,56,72,92"
+                                MaxWidth="920"
+                                HorizontalAlignment="Stretch"
                                 Background="#FF272822"
                                 BorderBrush="#FF49483E"
                                 BorderThickness="1"
@@ -1282,9 +1308,15 @@
                                 CornerRadius="9">
                             <Grid>
                                 <ListView x:Name="ProjectManagerList"
-                                          DisplayMemberPath="Name"
                                           SelectionMode="Single"
-                                          SelectionChanged="OnProjectManagerSelectionChanged" />
+                                          SelectionChanged="OnProjectManagerSelectionChanged">
+                                    <ListView.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis"
+                                                       MaxWidth="240" ToolTipService.ToolTip="{Binding RootPath}" />
+                                        </DataTemplate>
+                                    </ListView.ItemTemplate>
+                                </ListView>
                                 <StackPanel x:Name="ProjectManagerEmptyState" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8" Visibility="Collapsed">
                                     <FontIcon Glyph="&#xE8B7;" FontSize="30" Foreground="{StaticResource HubTextMutedBrush}" />
                                     <TextBlock Text="尚未添加项目" Foreground="{StaticResource HubTextSecondaryBrush}" />
@@ -1312,7 +1344,17 @@
                                 <Border Grid.Row="2" Margin="0,14,0,0" Padding="10,7" HorizontalAlignment="Left" Background="{StaticResource HubPanelBrush}" CornerRadius="7">
                                     <TextBlock x:Name="ProjectManagerStateText" Text="未选择" FontSize="11" Foreground="{StaticResource HubTextMutedBrush}" />
                                 </Border>
-                                <TextBlock Grid.Row="3" Margin="0,20,0,0" Text="Project File Hub 只记录路径与工作区偏好。普通浏览、拖放、链接跳转和 MCP 操作都不能越过当前项目根目录。" FontSize="11" Foreground="{StaticResource HubTextMutedBrush}" TextWrapping="Wrap" />
+                                <StackPanel Grid.Row="3" Margin="0,16,0,12" Spacing="8">
+                                    <TextBlock Text="项目别名" FontSize="12" Foreground="{StaticResource HubTextSecondaryBrush}" />
+                                    <TextBox x:Name="ProjectAliasBox" MaxLength="80" IsEnabled="False"
+                                             AutomationProperties.Name="项目别名" PlaceholderText="默认使用文件夹名称"
+                                             Background="{StaticResource HubPanelBrush}" Foreground="{StaticResource HubTextBrush}"
+                                             BorderBrush="{StaticResource HubBorderBrush}" CornerRadius="7" />
+                                    <Button x:Name="SaveProjectAliasButton" Content="保存别名" IsEnabled="False"
+                                            Style="{StaticResource HubToolbarButtonStyle}" Click="OnSaveProjectAliasClicked" />
+                                    <TextBlock Text="只修改这里的显示名称，不会重命名磁盘文件夹。" FontSize="11"
+                                               Foreground="{StaticResource HubTextMutedBrush}" TextWrapping="Wrap" />
+                                </StackPanel>
 
                                 <Border x:Name="ProjectManagerRemoveConfirmation"
                                         Grid.Row="4"

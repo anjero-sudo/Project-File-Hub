@@ -5,5 +5,7 @@
   <ItemGroup>
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.11" />
     <PackageVersion Include="Microsoft.WindowsAppSDK" Version="2.4.0" />
+    <PackageVersion Include="OpenMcdf" Version="3.3.0" />
+    <PackageVersion Include="TinyPinyin" Version="1.1.0" />
   </ItemGroup>
 </Project>

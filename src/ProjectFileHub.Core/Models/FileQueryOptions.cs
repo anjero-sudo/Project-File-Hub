@@ -18,4 +18,8 @@ public enum SortDirection
 public sealed record FileQueryOptions(
     FileSortField SortField = FileSortField.Name,
     SortDirection Direction = SortDirection.Ascending,
-    FileItemCategory? Category = null);
+    FileItemCategory? Category = null,
+    string? SearchText = null)
+{
+    public bool MatchesName(string name) => Services.FileNameSearch.Matches(name, SearchText);
+}

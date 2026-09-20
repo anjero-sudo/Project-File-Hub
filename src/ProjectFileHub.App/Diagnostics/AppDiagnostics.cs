@@ -57,7 +57,7 @@ internal static class AppDiagnostics
     }
 
     public static void Log(string message, Exception exception) =>
-        Log($"{message} | {exception.GetType().FullName}: {exception.Message}{Environment.NewLine}{exception.StackTrace}");
+        Log($"{message} | HRESULT=0x{exception.HResult:X8} | {exception}");
 
     public static void MarkStartupStable()
     {

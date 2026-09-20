@@ -4,6 +4,16 @@ namespace ProjectFileHub.Core.Services;
 
 public sealed class FileSystemBrowser
 {
+    public string? GetParentFolder(string projectRoot, string folderPath)
+    {
+        var boundary = new PathBoundary(projectRoot);
+        var safeFolder = boundary.EnsureSafe(folderPath);
+        if (string.Equals(PathBoundary.NormalizeRoot(safeFolder), PathBoundary.NormalizeRoot(projectRoot),
+                StringComparison.OrdinalIgnoreCase)) return null;
+        var parent = Path.GetDirectoryName(PathBoundary.NormalizeRoot(safeFolder));
+        return parent is null ? null : boundary.EnsureSafe(parent);
+    }
+
     public IReadOnlyList<FileSystemItem> GetItems(
         string projectRoot,
         string folderPath,
@@ -63,6 +73,11 @@ public sealed class FileSystemBrowser
                 FileSystemInfo info = isDirectory
                     ? new DirectoryInfo(path)
                     : new FileInfo(path);
+
+                if (!options.MatchesName(info.Name))
+                {
+                    continue;
+                }
 
                 items.Add(new FileSystemItem(
                     info.Name,

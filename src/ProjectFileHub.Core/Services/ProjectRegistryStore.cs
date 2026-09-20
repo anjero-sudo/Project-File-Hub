@@ -108,6 +108,29 @@ public sealed class ProjectRegistryStore
         }
     }
 
+    public async Task<ProjectRegistryState> RenameAsync(
+        Guid projectId, string alias, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(alias);
+        alias = alias.Trim();
+        if (alias.Length > 80 || alias.Any(char.IsControl))
+            throw new ArgumentException("项目别名最多 80 个字符，且不能包含换行或控制字符。", nameof(alias));
+
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var state = await LoadUnsafeAsync(cancellationToken).ConfigureAwait(false);
+            if (state.Projects.All(project => project.Id != projectId))
+                throw new KeyNotFoundException("指定项目尚未注册。");
+            return await SaveMutationUnsafeAsync(state with
+            {
+                Projects = state.Projects.Select(project => project.Id == projectId
+                    ? project with { Name = alias } : project).ToList()
+            }, cancellationToken).ConfigureAwait(false);
+        }
+        finally { _gate.Release(); }
+    }
+
     public async Task<ProjectRegistryState> RemoveAsync(
         Guid projectId,
         CancellationToken cancellationToken = default)

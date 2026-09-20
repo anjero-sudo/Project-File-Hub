@@ -71,6 +71,10 @@ public static partial class MarkdownHtmlRenderer
                     html.Append("<blockquote>").Append(RenderInline(block.Text)).Append("</blockquote>");
                     break;
 
+                case MarkdownPreviewBlockKind.Table when block.Table is { } table:
+                    AppendTable(html, table);
+                    break;
+
                 case MarkdownPreviewBlockKind.Code:
                     AppendCodeBlock(html, block);
                     break;
@@ -91,6 +95,24 @@ public static partial class MarkdownHtmlRenderer
 
         html.Append(DocumentEnd);
         return html.ToString();
+    }
+
+    private static void AppendTable(StringBuilder html, MarkdownTable table)
+    {
+        html.Append("<div class=\"table-scroll\" tabindex=\"0\" role=\"region\" aria-label=\"表格，可横向滚动\"><table><thead><tr>");
+        for (var i = 0; i < table.Headers.Count; i++)
+            html.Append("<th scope=\"col\" class=\"align-").Append(table.Alignments[i]).Append("\">")
+                .Append(RenderInline(table.Headers[i])).Append("</th>");
+        html.Append("</tr></thead><tbody>");
+        foreach (var row in table.Rows)
+        {
+            html.Append("<tr>");
+            for (var i = 0; i < table.Headers.Count; i++)
+                html.Append("<td class=\"align-").Append(table.Alignments[i]).Append("\">")
+                    .Append(RenderInline(row[i])).Append("</td>");
+            html.Append("</tr>");
+        }
+        html.Append("</tbody></table></div>");
     }
 
     private static int AppendList(
@@ -262,6 +284,12 @@ public static partial class MarkdownHtmlRenderer
             html, body { margin: 0; min-height: 100%; background: #0f1419; color: #c7d0da; }
             body { padding: 36px 48px 72px; font-size: 16px; line-height: 1.72; user-select: text; overflow-wrap: anywhere; }
             main { width: min(920px, 100%); margin: 0 auto; }
+            .table-scroll { max-width: 100%; overflow-x: auto; margin: 1.2em 0; }
+            table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 14px; line-height: 1.65; }
+            th, td { min-width: 0; padding: 10px 12px; border: 1px solid #293541; vertical-align: top; white-space: normal; overflow-wrap: anywhere; }
+            th { font-weight: 650; background: #182129; color: #eef5fb; }
+            .align-left { text-align: left; } .align-center { text-align: center; } .align-right { text-align: right; }
+            .table-scroll:focus-visible { outline: 2px solid #25c6f7; outline-offset: 2px; }
             h1, h2, h3, h4, h5, h6 { color: #eef5fb; line-height: 1.25; margin: 1.7em 0 .65em; letter-spacing: -.015em; }
             h1 { font-size: 2rem; border-bottom: 1px solid #293541; padding-bottom: .4em; }
             h2 { font-size: 1.55rem; }
@@ -290,6 +318,8 @@ public static partial class MarkdownHtmlRenderer
             body.light blockquote { color: #526278; background: #e8eff6; border-left-color: #0284c7; }
             body.light .inline-code { color: #0369a1; background: #e8eff6; border-color: #c8d5e2; }
             body.light .code-block { border-color: #bdcbd8; background: #17212a; }
+            body.light th, body.light td { border-color: #c8d5e2; }
+            body.light th { background: #e8eff6; color: #102033; }
             body.warm-graphite { background: #11110f; color: #b9b2a7; }
             body.warm-graphite h1, body.warm-graphite h2, body.warm-graphite h3, body.warm-graphite h4, body.warm-graphite h5, body.warm-graphite h6, body.warm-graphite strong { color: #f2eee6; }
             body.warm-graphite h1, body.warm-graphite hr { border-color: #38352f; }
@@ -302,6 +332,9 @@ public static partial class MarkdownHtmlRenderer
             body.warm-graphite .copy-code:hover { border-color: #edb56d; color: #fffaf0; }
             body.warm-graphite .copy-code:focus-visible, body.warm-graphite a:focus-visible { outline-color: #edb56d; }
             body.warm-graphite pre code { color: #f2eee6; }
+            body.warm-graphite th, body.warm-graphite td { border-color: #38352f; }
+            body.warm-graphite th { background: #22211e; color: #f2eee6; }
+            body.warm-graphite .table-scroll:focus-visible { outline-color: #edb56d; }
             @media (max-width: 640px) { body { padding: 24px 22px 56px; } }
           </style>
         </head>

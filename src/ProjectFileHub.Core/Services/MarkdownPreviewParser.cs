@@ -11,8 +11,14 @@ public enum MarkdownPreviewBlockKind
     NumberedListItem,
     Quote,
     Code,
+    Table,
     HorizontalRule
 }
+
+public sealed record MarkdownTable(
+    IReadOnlyList<string> Headers,
+    IReadOnlyList<string> Alignments,
+    IReadOnlyList<IReadOnlyList<string>> Rows);
 
 public sealed record MarkdownPreviewBlock(
     MarkdownPreviewBlockKind Kind,
@@ -20,7 +26,8 @@ public sealed record MarkdownPreviewBlock(
     int Level = 0,
     string? Marker = null,
     string? Language = null,
-    bool? IsChecked = null);
+    bool? IsChecked = null,
+    MarkdownTable? Table = null);
 
 /// <summary>
 /// Parses the structural subset needed by the local Markdown reading preview.
@@ -65,8 +72,9 @@ public static partial class MarkdownPreviewParser
             codeLanguage = string.Empty;
         }
 
-        foreach (var line in lines)
+        for (var lineIndex = 0; lineIndex < lines.Length; lineIndex++)
         {
+            var line = lines[lineIndex];
             var trimmedStart = line.TrimStart();
             var fence = FenceRegex().Match(trimmedStart);
             if (fence.Success)
@@ -102,6 +110,15 @@ public static partial class MarkdownPreviewParser
             if (string.IsNullOrWhiteSpace(line))
             {
                 FlushParagraph();
+                continue;
+            }
+
+            if (MarkdownTableParser.TryRead(lines, lineIndex, out var table, out var tableEnd))
+            {
+                FlushParagraph();
+                blocks.Add(new MarkdownPreviewBlock(MarkdownPreviewBlockKind.Table,
+                    string.Join('\n', lines[lineIndex..(tableEnd + 1)]), Table: table));
+                lineIndex = tableEnd;
                 continue;
             }
 

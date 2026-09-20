@@ -22,5 +22,7 @@
   <ItemGroup>
     <Content Include="Assets\ProjectFileHub.ico" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Assets\ProjectFileHub-256.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../THIRD-PARTY-NOTICES.md" Link="THIRD-PARTY-NOTICES.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../docs/licenses/*.txt" Link="licenses/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
