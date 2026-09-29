@@ -62,50 +62,18 @@ public sealed class ProjectIndexService : IAsyncDisposable
         IndexChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    public async Task<IReadOnlyList<FileSystemItem>> QueryAsync(
+    public Task<IReadOnlyList<FileSystemItem>> QueryAsync(
         FileItemCategory category,
         FileQueryOptions options,
         CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            await using var connection = new SqliteConnection(_connectionString);
-            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-            await using var command = connection.CreateCommand();
-            command.CommandText = """
-                SELECT name, path, is_directory, size, modified_utc_ticks, created_utc_ticks, extension, category
-                FROM entries
-                WHERE category = $category
-                """;
-            command.Parameters.AddWithValue("$category", (int)category);
-
-            var items = new List<FileSystemItem>();
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-            {
-                var isDirectory = reader.GetInt64(2) != 0;
-                items.Add(new FileSystemItem(
-                    reader.GetString(0),
-                    reader.GetString(1),
-                    isDirectory,
-                    reader.IsDBNull(3) ? null : reader.GetInt64(3),
-                    new DateTimeOffset(reader.GetInt64(4), TimeSpan.Zero),
-                    new DateTimeOffset(reader.GetInt64(5), TimeSpan.Zero),
-                    reader.GetString(6),
-                    (FileItemCategory)reader.GetInt64(7)));
-            }
-
-            return Sort(items, options);
-        }
-        finally
-        {
-            _gate.Release();
-        }
+        return Task.Run(
+            () => QueryCoreAsync(category, pathPrefix: null, options, cancellationToken),
+            cancellationToken);
     }
 
-    public async Task<IReadOnlyList<FileSystemItem>> QuerySubtreeAsync(
+    public Task<IReadOnlyList<FileSystemItem>> QuerySubtreeAsync(
         FileItemCategory category,
         string folderPath,
         FileQueryOptions options,
@@ -122,27 +90,50 @@ public sealed class ProjectIndexService : IAsyncDisposable
             ? safeFolderPath
             : safeFolderPath + Path.DirectorySeparatorChar;
 
+        // Microsoft.Data.Sqlite's async methods execute synchronously. Keep the
+        // complete query, row mapping, search, and sort away from the UI thread.
+        return Task.Run(
+            () => QueryCoreAsync(category, prefix, options, cancellationToken),
+            cancellationToken);
+    }
+
+    private async Task<IReadOnlyList<FileSystemItem>> QueryCoreAsync(
+        FileItemCategory category,
+        string? pathPrefix,
+        FileQueryOptions options,
+        CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             await using var connection = new SqliteConnection(_connectionString);
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
             await using var command = connection.CreateCommand();
-            command.CommandText = """
+            command.CommandText = pathPrefix is null
+                ? """
+                SELECT name, path, is_directory, size, modified_utc_ticks, created_utc_ticks, extension, category
+                FROM entries
+                WHERE category = $category
+                """
+                : """
                 SELECT name, path, is_directory, size, modified_utc_ticks, created_utc_ticks, extension, category
                 FROM entries
                 WHERE category = $category
                   AND lower(substr(path, 1, length($prefix))) = lower($prefix)
                 """;
             command.Parameters.AddWithValue("$category", (int)category);
-            command.Parameters.AddWithValue("$prefix", prefix);
+            if (pathPrefix is not null)
+            {
+                command.Parameters.AddWithValue("$prefix", pathPrefix);
+            }
 
             var items = new List<FileSystemItem>();
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
                 var isDirectory = reader.GetInt64(2) != 0;
-                items.Add(new FileSystemItem(
+                var item = new FileSystemItem(
                     reader.GetString(0),
                     reader.GetString(1),
                     isDirectory,
@@ -150,10 +141,14 @@ public sealed class ProjectIndexService : IAsyncDisposable
                     new DateTimeOffset(reader.GetInt64(4), TimeSpan.Zero),
                     new DateTimeOffset(reader.GetInt64(5), TimeSpan.Zero),
                     reader.GetString(6),
-                    (FileItemCategory)reader.GetInt64(7)));
+                    (FileItemCategory)reader.GetInt64(7));
+                if (options.MatchesName(item.Name))
+                {
+                    items.Add(item);
+                }
             }
 
-            return Sort(items, options);
+            return FileItemSort.Apply(items, options);
         }
         finally
         {
@@ -546,25 +541,6 @@ public sealed class ProjectIndexService : IAsyncDisposable
         changes
             .GroupBy(change => (change.Kind, change.Path), IndexChangeKeyComparer.Instance)
             .Select(group => group.Last());
-
-    private static IReadOnlyList<FileSystemItem> Sort(
-        IEnumerable<FileSystemItem> source,
-        FileQueryOptions options)
-    {
-        var comparer = NaturalStringComparer.OrdinalIgnoreCase;
-        IOrderedEnumerable<FileSystemItem> ordered = options.SortField switch
-        {
-            FileSortField.ModifiedAt => source.OrderBy(item => item.ModifiedAt),
-            FileSortField.CreatedAt => source.OrderBy(item => item.CreatedAt),
-            FileSortField.Type => source.OrderBy(item => item.DisplayType, comparer),
-            FileSortField.Size => source.OrderBy(item => item.Size ?? -1),
-            _ => source.OrderBy(item => item.Name, comparer)
-        };
-        ordered = ordered.ThenBy(item => item.Name, comparer);
-        return options.Direction == SortDirection.Descending
-            ? ordered.Reverse().ToArray()
-            : ordered.ToArray();
-    }
 
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
 

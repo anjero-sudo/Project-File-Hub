@@ -3,16 +3,18 @@ using System.Runtime.CompilerServices;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
+using ProjectFileHub.App.Services;
 using ProjectFileHub.Core.Models;
 using ProjectFileHub.Core.Services;
-using Windows.Storage;
-using Windows.Storage.FileProperties;
 
 namespace ProjectFileHub.App.ViewModels;
 
 public sealed class ExplorerItemViewModel : INotifyPropertyChanged
 {
     private BitmapImage? _thumbnail;
+    private Task? _thumbnailLoadTask;
+    private int _thumbnailVersion;
+    private int _thumbnailLeaseCount;
     private bool _isRenaming;
     private bool _isSelected;
     private string _renameText;
@@ -184,29 +186,99 @@ public sealed class ExplorerItemViewModel : INotifyPropertyChanged
         NotifyRenameState();
     }
 
-    public async Task LoadThumbnailAsync()
+    internal void AcquireThumbnailLease()
     {
-        if (!Item.IsImage || Thumbnail is not null)
+        if (Item.IsImage)
+        {
+            _thumbnailLeaseCount++;
+        }
+    }
+
+    internal void ReleaseThumbnailLease()
+    {
+        if (!Item.IsImage || _thumbnailLeaseCount == 0)
         {
             return;
         }
 
+        _thumbnailLeaseCount--;
+        if (_thumbnailLeaseCount == 0)
+        {
+            ReleaseThumbnail();
+        }
+    }
+
+    internal void ReleaseThumbnail()
+    {
+        _thumbnailLeaseCount = 0;
+        _thumbnailVersion++;
+        // A recycled container may become visible again while the cache's native
+        // single-flight is still finishing. Let the new VM generation attach its
+        // own waiter; the shared cache still prevents duplicate decode work.
+        _thumbnailLoadTask = null;
+        Thumbnail = null;
+    }
+
+    internal Task LoadThumbnailAsync(
+        ImageLoadingService imageLoading,
+        string projectRoot,
+        CancellationToken cancellationToken)
+    {
+        if (!Item.IsImage || Thumbnail is not null || _thumbnailLeaseCount == 0)
+        {
+            return Task.CompletedTask;
+        }
+
+        if (_thumbnailLoadTask is { IsCompleted: false } running)
+        {
+            return running;
+        }
+
+        var version = _thumbnailVersion;
+        var operation = LoadThumbnailCoreAsync(imageLoading, projectRoot, version, cancellationToken);
+        _thumbnailLoadTask = operation;
+        return ClearCompletedThumbnailTaskAsync(operation);
+    }
+
+    private async Task LoadThumbnailCoreAsync(
+        ImageLoadingService imageLoading,
+        string projectRoot,
+        int version,
+        CancellationToken cancellationToken)
+    {
         try
         {
-            var file = await StorageFile.GetFileFromPathAsync(Item.FullPath);
-            using var thumbnail = await file.GetThumbnailAsync(
-                ThumbnailMode.PicturesView,
-                320,
-                ThumbnailOptions.ResizeThumbnail);
-            if (thumbnail is null || thumbnail.Size == 0) return;
-            var bitmap = new BitmapImage();
-            await bitmap.SetSourceAsync(thumbnail);
-            Thumbnail = bitmap;
+            var bitmap = await imageLoading.LoadThumbnailAsync(projectRoot, Item.FullPath, cancellationToken);
+            if (!cancellationToken.IsCancellationRequested
+                && version == _thumbnailVersion
+                && _thumbnailLeaseCount > 0)
+            {
+                Thumbnail = bitmap;
+            }
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException
-                                         or System.Runtime.InteropServices.COMException)
+        catch (OperationCanceledException)
         {
+            // Container recycling, navigation, and stale generations are expected.
+        }
+        catch (Exception)
+        {
+            // The service records path, HRESULT, queue state, and memory evidence.
             // Keep the category glyph when Windows cannot decode a thumbnail.
+        }
+    }
+
+    private async Task ClearCompletedThumbnailTaskAsync(Task operation)
+    {
+        try
+        {
+            await operation;
+        }
+        finally
+        {
+            if (ReferenceEquals(_thumbnailLoadTask, operation))
+            {
+                _thumbnailLoadTask = null;
+            }
         }
     }
 

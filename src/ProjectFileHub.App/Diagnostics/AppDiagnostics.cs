@@ -9,8 +9,7 @@ internal static class AppDiagnostics
         "logs");
     private static readonly string LogPath = Path.Combine(LogDirectory, "startup.log");
     private static readonly string StartupPendingPath = Path.Combine(LogDirectory, "startup.pending");
-
-    public static string CurrentLogPath => LogPath;
+    private static readonly string RuntimePendingPath = Path.Combine(LogDirectory, "runtime.pending");
 
     public static bool PreviousStartupFailed { get; private set; }
 
@@ -25,11 +24,17 @@ internal static class AppDiagnostics
             }
 
             PreviousStartupFailed = File.Exists(StartupPendingPath);
+            var previousRuntimeEndedUnexpectedly = File.Exists(RuntimePendingPath);
             File.WriteAllText(StartupPendingPath, $"{DateTimeOffset.Now:O}|{Environment.ProcessId}");
+            File.WriteAllText(RuntimePendingPath, $"{DateTimeOffset.Now:O}|{Environment.ProcessId}");
             Log($"Session start · PID {Environment.ProcessId} · {Environment.Version}");
             if (PreviousStartupFailed)
             {
                 Log("Previous startup did not reach the stable marker; safe startup is enabled");
+            }
+            if (previousRuntimeEndedUnexpectedly)
+            {
+                Log("Previous session did not record a normal exit");
             }
         }
         catch
@@ -73,6 +78,23 @@ internal static class AppDiagnostics
         catch
         {
             // A failed marker cleanup must not affect the running app.
+        }
+    }
+
+    public static void MarkSessionClosed()
+    {
+        try
+        {
+            if (File.Exists(RuntimePendingPath))
+            {
+                File.Delete(RuntimePendingPath);
+            }
+
+            Log("Session closed normally");
+        }
+        catch
+        {
+            // Diagnostics must never prevent a normal application exit.
         }
     }
 }

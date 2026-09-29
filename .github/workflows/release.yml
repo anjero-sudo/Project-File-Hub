@@ -61,5 +61,5 @@ jobs:
             "artifacts/release/ProjectFileHub-Setup-$version-win-x64.exe" `
             "artifacts/release/ProjectFileHub-Setup-$version-win-x64.exe.sha256" `
             --verify-tag `
-            --generate-notes `
+            --notes-file docs/RELEASE_NOTES.md `
             --title "Project File Hub $env:GITHUB_REF_NAME"

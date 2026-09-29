@@ -19,6 +19,11 @@ public partial class App : WinUIApplication
 
         AppDomain.CurrentDomain.UnhandledException += (_, eventArgs) =>
             AppDiagnostics.Log($"AppDomain unhandled exception | {eventArgs.ExceptionObject}");
+        TaskScheduler.UnobservedTaskException += (_, eventArgs) =>
+        {
+            AppDiagnostics.Log("Unobserved task exception", eventArgs.Exception);
+            eventArgs.SetObserved();
+        };
         UnhandledException += (_, eventArgs) =>
             AppDiagnostics.Log("WinUI unhandled exception", eventArgs.Exception);
         InitializeComponent();

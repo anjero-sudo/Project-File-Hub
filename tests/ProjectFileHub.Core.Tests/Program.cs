@@ -39,6 +39,11 @@ var tests = new (string Name, Func<Task> Run)[]
     ("Conflict policies keep both, replace files and skip", TestConflictPolicies),
     ("External import copies files and folders into the project", TestExternalImport),
     ("Recycle planning protects the project root and nested selections", TestRecyclePlanning),
+    ("Bounded cache enforces LRU entry and byte budgets", TestBoundedCacheBudgets),
+    ("Bounded cache single-flight survives one canceled waiter", TestBoundedCacheSingleFlight),
+    ("Bounded cache invalidation rejects stale results", TestBoundedCacheInvalidation),
+    ("Bounded cache timeout keeps native work in its slot and caps the queue", TestBoundedCacheTimeoutAndQueue),
+    ("SQLite index search and sort match direct folder browsing", TestProjectIndexSearchAndSort),
     ("SQLite project index scans subfolders and tracks new files", TestProjectIndex)
 };
 
@@ -1131,6 +1136,178 @@ static Task TestRecyclePlanning()
     return Task.CompletedTask;
 }
 
+static async Task TestBoundedCacheBudgets()
+{
+    var loads = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+    var cache = new BoundedAsyncCache<string>(maximumBytes: 10, maximumEntries: 2, concurrency: 1, maximumPending: 4, timeout: TimeSpan.FromSeconds(1));
+
+    Task<CachedResource<string>> Load(string key, long bytes, CancellationToken _)
+    {
+        loads[key] = loads.GetValueOrDefault(key) + 1;
+        return Task.FromResult(new CachedResource<string>($"{key}-{loads[key]}", bytes));
+    }
+
+    await cache.GetAsync("A", token => Load("A", 4, token));
+    await cache.GetAsync("B", token => Load("B", 4, token));
+    await cache.GetAsync("A", token => Load("A", 4, token));
+    await cache.GetAsync("C", token => Load("C", 4, token));
+    await cache.GetAsync("B", token => Load("B", 4, token));
+
+    Assert(loads["A"] == 1 && loads["B"] == 2 && loads["C"] == 1,
+        "Reading A must refresh its LRU position so adding C evicts B.");
+    Assert(cache.State.Entries <= 2 && cache.State.EstimatedBytes <= 10,
+        "Cached resources must stay inside both configured budgets.");
+
+    await cache.GetAsync("oversized", token => Load("oversized", 11, token));
+    await cache.GetAsync("oversized", token => Load("oversized", 11, token));
+    Assert(loads["oversized"] == 2,
+        "A resource larger than the byte budget must be delivered without being retained.");
+
+    var attempts = 0;
+    await AssertThrowsAsync<IOException>(() => cache.GetAsync("retry", _ =>
+    {
+        attempts++;
+        throw new IOException("first attempt fails");
+    }));
+    var retried = await cache.GetAsync("retry", _ =>
+    {
+        attempts++;
+        return Task.FromResult(new CachedResource<string>("recovered", 1));
+    });
+    Assert(retried == "recovered" && attempts == 2,
+        "A failed factory must leave no poisoned cache entry and remain retryable.");
+}
+
+static async Task TestBoundedCacheSingleFlight()
+{
+    var cache = new BoundedAsyncCache<string>(1024, 4, 1, 4, TimeSpan.FromSeconds(2));
+    var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    var factoryCalls = 0;
+
+    async Task<CachedResource<string>> Load(CancellationToken _)
+    {
+        Interlocked.Increment(ref factoryCalls);
+        started.TrySetResult();
+        await release.Task;
+        return new CachedResource<string>("shared", 8);
+    }
+
+    using var firstWaiterCancellation = new CancellationTokenSource();
+    var first = cache.GetAsync("same", Load, firstWaiterCancellation.Token);
+    var second = cache.GetAsync("same", Load);
+    await started.Task;
+    firstWaiterCancellation.Cancel();
+    await AssertThrowsAsync<OperationCanceledException>(() => first);
+    release.TrySetResult();
+
+    Assert(await second == "shared" && factoryCalls == 1,
+        "Canceling one caller must not cancel the shared native operation for another waiter.");
+}
+
+static async Task TestBoundedCacheInvalidation()
+{
+    var cache = new BoundedAsyncCache<string>(1024, 4, 1, 4, TimeSpan.FromSeconds(2));
+    for (var round = 0; round < 2; round++)
+    {
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var stale = cache.GetAsync("image", async _ =>
+        {
+            started.TrySetResult();
+            await release.Task;
+            return new CachedResource<string>("stale", 8);
+        });
+        await started.Task;
+        cache.CancelPending();
+        release.TrySetResult();
+        await AssertThrowsAsync<OperationCanceledException>(() => stale);
+        await WaitForCacheIdleAsync(cache);
+    }
+
+    var freshLoads = 0;
+    var fresh = await cache.GetAsync("image", _ =>
+    {
+        freshLoads++;
+        return Task.FromResult(new CachedResource<string>("fresh", 8));
+    });
+    Assert(fresh == "fresh" && freshLoads == 1 && cache.State.Entries == 1,
+        "An invalidated generation must never publish its stale result into the cache.");
+}
+
+static async Task TestBoundedCacheTimeoutAndQueue()
+{
+    var cache = new BoundedAsyncCache<string>(1024, 4, 1, 2, TimeSpan.FromMilliseconds(120));
+    var nativeStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    var releaseNative = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    var timedOut = cache.GetAsync("blocked", async _ =>
+    {
+        nativeStarted.TrySetResult();
+        await releaseNative.Task; // Deliberately ignores cancellation like a stuck native decoder.
+        return new CachedResource<string>("late", 8);
+    });
+    await nativeStarted.Task;
+    await AssertThrowsAsync<TimeoutException>(() => timedOut);
+
+    var replacementStarted = 0;
+    var replacement = cache.GetAsync("replacement", _ =>
+    {
+        Interlocked.Increment(ref replacementStarted);
+        return Task.FromResult(new CachedResource<string>("replacement", 8));
+    });
+    await AssertThrowsAsync<InvalidOperationException>(() =>
+        cache.GetAsync("overflow", _ => Task.FromResult(new CachedResource<string>("overflow", 8))));
+    await Task.Delay(25);
+    Assert(cache.State.Running == 1 && replacementStarted == 0,
+        "A timed-out native operation must keep the only concurrency slot until it actually returns.");
+
+    releaseNative.TrySetResult();
+    Assert(await replacement == "replacement",
+        "Queued work must proceed after the real native operation releases its slot.");
+    await WaitForCacheIdleAsync(cache);
+    Assert(cache.State.Pending <= 2,
+        "Outstanding cache work must never exceed the configured queue bound.");
+}
+
+static async Task TestProjectIndexSearchAndSort()
+{
+    using var workspace = TemporaryWorkspace.Create();
+    var assets = Directory.CreateDirectory(Path.Combine(workspace.Root, "assets"));
+    File.WriteAllText(Path.Combine(assets.FullName, "shot10.png"), "image");
+    File.WriteAllText(Path.Combine(assets.FullName, "shot2.png"), "image");
+    File.WriteAllText(Path.Combine(assets.FullName, "人物.png"), "image");
+    var databasePath = workspace.Root + ".sort.index.db";
+
+    try
+    {
+        await using var index = new ProjectIndexService(workspace.Root, databasePath);
+        await index.InitializeAsync();
+        var options = new FileQueryOptions(
+            FileSortField.Name,
+            SortDirection.Descending,
+            FileItemCategory.Image);
+        var indexed = await index.QuerySubtreeAsync(FileItemCategory.Image, assets.FullName, options);
+        var direct = new FileSystemBrowser().GetItems(workspace.Root, assets.FullName, options);
+        Assert(indexed.Select(item => item.Name).SequenceEqual(direct.Select(item => item.Name)),
+            "Index and direct-folder paths must share the same natural sort semantics.");
+
+        var searched = await index.QueryAsync(
+            FileItemCategory.Image,
+            options with { SearchText = "rw" });
+        Assert(searched.Count == 1 && searched[0].Name == "人物.png",
+            "Index queries must apply the same Chinese-initial filename search as direct browsing.");
+    }
+    finally
+    {
+        foreach (var suffix in new[] { string.Empty, "-wal", "-shm" })
+        {
+            var path = databasePath + suffix;
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+}
+
 static async Task TestProjectIndex()
 {
     using var workspace = TemporaryWorkspace.Create();
@@ -1255,6 +1432,35 @@ static void AssertThrows<TException>(Action action)
     }
 
     throw new InvalidOperationException($"Expected {typeof(TException).Name}.");
+}
+
+static async Task AssertThrowsAsync<TException>(Func<Task> action)
+    where TException : Exception
+{
+    try
+    {
+        await action();
+    }
+    catch (TException)
+    {
+        return;
+    }
+
+    throw new InvalidOperationException($"Expected {typeof(TException).Name}.");
+}
+
+static async Task WaitForCacheIdleAsync<T>(BoundedAsyncCache<T> cache)
+{
+    for (var attempt = 0; attempt < 100; attempt++)
+    {
+        if (cache.State is { Pending: 0, Running: 0 })
+        {
+            return;
+        }
+        await Task.Delay(5);
+    }
+
+    throw new InvalidOperationException("Cache work did not return to idle after cancellation/completion.");
 }
 
 file sealed class TemporaryWorkspace : IDisposable

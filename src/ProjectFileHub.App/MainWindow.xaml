@@ -1219,6 +1219,7 @@
                               ItemsSource="{x:Bind PreviewItems}"
                               SelectionMode="Single"
                               SelectionChanged="OnPreviewFilmstripSelectionChanged"
+                              ContainerContentChanging="OnPreviewFilmstripContainerContentChanging"
                               ItemContainerStyle="{StaticResource HubFilmstripItemStyle}"
                               ScrollViewer.HorizontalScrollMode="Enabled"
                               ScrollViewer.HorizontalScrollBarVisibility="Hidden"

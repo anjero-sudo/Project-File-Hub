@@ -20,9 +20,8 @@ artifacts/
 .codex/
 AGENTS.md
 
-# Local design drafts; publish only the selected Focus Canvas preview
+# Local design drafts
 design/reference/*
-!design/reference/focus-canvas-normal-browser-draft-v1.png
 /design-qa.md
 
 # Test and coverage outputs

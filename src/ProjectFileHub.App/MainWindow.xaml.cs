@@ -16,6 +16,7 @@ using Microsoft.UI.Xaml.Media.Imaging;
 using Microsoft.Web.WebView2.Core;
 using ProjectFileHub.App.ViewModels;
 using ProjectFileHub.App.Diagnostics;
+using ProjectFileHub.App.Services;
 using ProjectFileHub.App.WindowsIntegration;
 using ProjectFileHub.Core;
 using ProjectFileHub.Core.Models;
@@ -49,6 +50,7 @@ public sealed partial class MainWindow : Window
     private readonly AppSettingsStore _settingsStore;
     private readonly HttpClient _updateHttpClient = new() { Timeout = TimeSpan.FromSeconds(15) };
     private readonly GitHubReleaseUpdateService _updateService;
+    private readonly ImageLoadingService _imageLoading;
     private readonly StartupRegistrationService _startupRegistration = new();
     private readonly bool _launchToTray;
     private readonly DispatcherTimer _treeHoverTimer = new() { Interval = TimeSpan.FromMilliseconds(650) };
@@ -82,6 +84,10 @@ public sealed partial class MainWindow : Window
     private Task? _indexInitialization;
     private CancellationTokenSource? _indexCancellation;
     private CancellationTokenSource? _fileViewCancellation;
+    private CancellationTokenSource _thumbnailCancellation = new();
+    private CancellationTokenSource? _previewImageCancellation;
+    private CancellationTokenSource? _linkedImageCancellation;
+    private CancellationTokenSource? _inspectorImageCancellation;
     private int _fileViewVersion;
     private Task _fileViewRefreshTask = Task.CompletedTask;
     private PreviewMode _previewMode = PreviewMode.WorkspaceQuickPreview;
@@ -92,6 +98,7 @@ public sealed partial class MainWindow : Window
     private NotificationAreaService? _notificationAreaService;
     private bool _applicationExitRequested;
     private bool _isHidingToTray;
+    private bool _isWindowHiddenToTray;
     private bool _isPreviewImagePanning;
     private uint _previewImagePanPointerId;
     private double _previewImagePanStartX;
@@ -106,6 +113,11 @@ public sealed partial class MainWindow : Window
     private string _previewCodeSource = string.Empty;
     private string? _linkedPreviewImagePath;
     private int _linkedPreviewImageVersion;
+    private int _inspectorImageVersion;
+    private ExplorerItemViewModel? _inspectorThumbnailItem;
+    private string? _previewImageLoadingPath;
+    private string? _previewImageReadyPath;
+    private readonly Dictionary<object, (ListViewBase Surface, ExplorerItemViewModel Item)> _thumbnailContainerOwners = [];
 
     private const float PreviewZoomMinimum = 0.5f;
     private const float PreviewZoomMaximum = 8.0f;
@@ -149,6 +161,7 @@ public sealed partial class MainWindow : Window
         _updateService = new GitHubReleaseUpdateService(_updateHttpClient);
         AppDiagnostics.Log("MainWindow constructor entered");
         InitializeComponent();
+        _imageLoading = new ImageLoadingService(DispatcherQueue);
         AppVersionText.Text = $"v{CurrentVersionText}";
         AttachPreviewToRootHost();
         RootLayout.AddHandler(UIElement.KeyDownEvent, new KeyEventHandler(OnRootKeyDown), true);
@@ -2061,6 +2074,7 @@ public sealed partial class MainWindow : Window
         if (!_loaded || _currentFolder is null) return;
         _searchText = SearchBox.Text.Trim();
         CancelFileViewRefresh();
+        ReleaseFileViewImages("search changed");
         Items.Clear();
         PreviewItems.Clear();
         _selectedItem = null;
@@ -2116,7 +2130,9 @@ public sealed partial class MainWindow : Window
         {
             var boundary = new PathBoundary(_activeProject.RootPath);
             CancelFileViewRefresh();
-            _currentFolder = boundary.EnsureSafe(folderPath);
+            var safeFolder = boundary.EnsureSafe(folderPath);
+            ReleaseFileViewImages("folder changed");
+            _currentFolder = safeFolder;
             _searchTimer.Stop();
             _searchText = string.Empty;
             SearchBox.Text = string.Empty;
@@ -2173,6 +2189,11 @@ public sealed partial class MainWindow : Window
 
     private void RefreshFileView()
     {
+        if (_applicationExitRequested || _isWindowHiddenToTray)
+        {
+            return;
+        }
+
         if (_activeProject is null || _currentFolder is null)
         {
             ShowNoProjectState();
@@ -2185,6 +2206,7 @@ public sealed partial class MainWindow : Window
     private void ShowNoProjectState(bool preserveRegisteredProjects = false)
     {
         CancelFileViewRefresh();
+        ReleaseFileViewImages("no active project");
         StopProjectIndex();
         SetMultiSelectMode(false, clearSelectionWhenDisabled: true, announce: false);
         _activeProject = null;
@@ -2411,8 +2433,7 @@ public sealed partial class MainWindow : Window
             }
 
             EnsureCurrentFileViewRequest(requestVersion, project.Id, folderPath, category, includeSubfolders, cancellationToken);
-            results = results.Where(item => query.MatchesName(item.Name)).ToArray();
-
+            ReleaseFileViewImages("file view replaced");
             Items.Clear();
             for (var index = 0; index < results.Count; index++)
             {
@@ -2450,6 +2471,9 @@ public sealed partial class MainWindow : Window
             SelectionStatusText.Text = "未选择文件";
             UpdateMultiSelectionUi();
             SetStatus($"{folderName} · 已显示 {Items.Count} 个{categoryName}{(includeSubfolders ? "（含子文件夹）" : string.Empty)}");
+            AppDiagnostics.Log(
+                $"File view ready · request={requestVersion} · items={Items.Count} · subtree={includeSubfolders} · category={category?.ToString() ?? "All"} · searchLength={query.SearchText?.Length ?? 0} · elapsedMs={(DateTimeOffset.UtcNow - loadingStarted).TotalMilliseconds:0}");
+            _imageLoading.LogState("file view ready");
         }
         catch (OperationCanceledException)
         {
@@ -2463,6 +2487,10 @@ public sealed partial class MainWindow : Window
                 EmptyStateTitle.Text = "暂时无法筛选当前文件夹";
                 EmptyStateMessage.Text = exception.Message;
                 SetStatus($"当前文件夹筛选失败：{exception.Message}");
+                AppDiagnostics.Log(
+                    $"File view failed · request={requestVersion} · subtree={includeSubfolders} · category={category?.ToString() ?? "All"}",
+                    exception);
+                _imageLoading.LogState("file view failed");
             }
         }
         finally
@@ -2540,7 +2568,9 @@ public sealed partial class MainWindow : Window
 
     private void OnProjectIndexChanged(object? sender, EventArgs e)
     {
-        if (!ReferenceEquals(sender, _projectIndex))
+        if (_applicationExitRequested
+            || _isWindowHiddenToTray
+            || !ReferenceEquals(sender, _projectIndex))
         {
             return;
         }
@@ -2597,9 +2627,13 @@ public sealed partial class MainWindow : Window
         }
 
         _isHidingToTray = true;
+        _isWindowHiddenToTray = true;
         try
         {
-            ClosePreview();
+            _searchTimer.Stop();
+            CancelFileViewRefresh();
+            ReleaseFileViewImages("window hidden");
+            _imageLoading.ReleaseAll("window hidden");
             SettingsOverlay.Visibility = Visibility.Collapsed;
             UpdateCurrentWorkspaceSnapshot();
             _ = SaveSettingsSnapshotAsync(_settingsState);
@@ -2610,6 +2644,11 @@ public sealed partial class MainWindow : Window
             {
                 _notificationAreaService?.ShowBackgroundTip();
             }
+        }
+        catch
+        {
+            _isWindowHiddenToTray = false;
+            throw;
         }
         finally
         {
@@ -2627,6 +2666,7 @@ public sealed partial class MainWindow : Window
         _isHidingToTray = true;
         try
         {
+            _isWindowHiddenToTray = false;
             if (_appWindow.Presenter is OverlappedPresenter
                 {
                     State: OverlappedPresenterState.Minimized
@@ -2641,6 +2681,7 @@ public sealed partial class MainWindow : Window
             var broughtToFront = WindowActivationService.BringToForeground(windowHandle);
             AppDiagnostics.Log($"Main window restored from notification area · foreground={broughtToFront}");
             SetStatus("已从通知区域恢复");
+            RefreshFileView();
         }
         finally
         {
@@ -2745,6 +2786,13 @@ public sealed partial class MainWindow : Window
         }
 
         CancelFileViewRefresh();
+        ReleaseFileViewImages("window closed");
+        _imageLoading.ReleaseAll("window closed");
+        _thumbnailCancellation.Cancel();
+        _thumbnailCancellation.Dispose();
+        _inspectorImageCancellation?.Cancel();
+        _inspectorImageCancellation?.Dispose();
+        _inspectorImageCancellation = null;
         StopProjectIndex();
         if (_appWindow is not null)
         {
@@ -2758,6 +2806,7 @@ public sealed partial class MainWindow : Window
         _minimumWindowSizeService?.Dispose();
         _minimumWindowSizeService = null;
         _updateHttpClient.Dispose();
+        AppDiagnostics.MarkSessionClosed();
     }
 
     private void ScheduleWorkspaceSave()
@@ -2859,18 +2908,22 @@ public sealed partial class MainWindow : Window
     private void OnGridModeClicked(object sender, RoutedEventArgs e)
     {
         var selected = GetSelectedItems();
+        ReleaseThumbnailSurface(FileList);
         FileGrid.Visibility = Visibility.Visible;
         FileList.Visibility = Visibility.Collapsed;
         ApplySelectionToView(FileGrid, selected);
+        QueueRealizedThumbnailRefresh(FileGrid);
         ScheduleWorkspaceSave();
     }
 
     private void OnListModeClicked(object sender, RoutedEventArgs e)
     {
         var selected = GetSelectedItems();
+        ReleaseThumbnailSurface(FileGrid);
         FileGrid.Visibility = Visibility.Collapsed;
         FileList.Visibility = Visibility.Visible;
         ApplySelectionToView(FileList, selected);
+        QueueRealizedThumbnailRefresh(FileList);
         ScheduleWorkspaceSave();
     }
 
@@ -3035,11 +3088,127 @@ public sealed partial class MainWindow : Window
 
     private void OnFileContainerContentChanging(ListViewBase sender, ContainerContentChangingEventArgs args)
     {
-        if (!args.InRecycleQueue
-            && args.Item is ExplorerItemViewModel { Item.IsImage: true } item)
+        UpdateThumbnailContainerLease(sender, args);
+    }
+
+    private void OnPreviewFilmstripContainerContentChanging(ListViewBase sender, ContainerContentChangingEventArgs args)
+    {
+        UpdateThumbnailContainerLease(sender, args);
+    }
+
+    private void UpdateThumbnailContainerLease(ListViewBase sender, ContainerContentChangingEventArgs args)
+    {
+        var container = (object?)args.ItemContainer;
+        if (container is not null
+            && _thumbnailContainerOwners.TryGetValue(container, out var previous))
         {
-            _ = item.LoadThumbnailAsync();
+            if (!args.InRecycleQueue
+                && ReferenceEquals(previous.Surface, sender)
+                && ReferenceEquals(previous.Item, args.Item))
+            {
+                if (!_applicationExitRequested
+                    && !_isWindowHiddenToTray
+                    && _activeProject is { } existingProject)
+                {
+                    _ = previous.Item.LoadThumbnailAsync(
+                        _imageLoading,
+                        existingProject.RootPath,
+                        _thumbnailCancellation.Token);
+                }
+                return;
+            }
+
+            _thumbnailContainerOwners.Remove(container);
+            previous.Item.ReleaseThumbnailLease();
         }
+
+        if (args.InRecycleQueue
+            || _applicationExitRequested
+            || _isWindowHiddenToTray
+            || container is null
+            || args.Item is not ExplorerItemViewModel { Item.IsImage: true } item
+            || _activeProject is null)
+        {
+            return;
+        }
+
+        item.AcquireThumbnailLease();
+        _thumbnailContainerOwners[container] = (sender, item);
+        _ = item.LoadThumbnailAsync(
+            _imageLoading,
+            _activeProject.RootPath,
+            _thumbnailCancellation.Token);
+    }
+
+    private void ReleaseThumbnailSurface(ListViewBase surface)
+    {
+        foreach (var pair in _thumbnailContainerOwners
+                     .Where(pair => ReferenceEquals(pair.Value.Surface, surface))
+                     .ToArray())
+        {
+            pair.Value.Item.ReleaseThumbnailLease();
+            _thumbnailContainerOwners.Remove(pair.Key);
+        }
+    }
+
+    private void QueueRealizedThumbnailRefresh(ListViewBase surface) =>
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            if (_applicationExitRequested
+                || _isWindowHiddenToTray
+                || _activeProject is null
+                || surface.Visibility != Visibility.Visible)
+            {
+                return;
+            }
+
+            for (var index = 0; index < surface.Items.Count; index++)
+            {
+                if (surface.ContainerFromIndex(index) is not { } container
+                    || surface.Items[index] is not ExplorerItemViewModel { Item.IsImage: true } item
+                    || _thumbnailContainerOwners.ContainsKey(container))
+                {
+                    continue;
+                }
+
+                item.AcquireThumbnailLease();
+                _thumbnailContainerOwners[container] = (surface, item);
+                _ = item.LoadThumbnailAsync(
+                    _imageLoading,
+                    _activeProject.RootPath,
+                    _thumbnailCancellation.Token);
+            }
+        });
+
+    private void ReleaseFileViewImages(string reason)
+    {
+        ClosePreview();
+
+        _thumbnailCancellation.Cancel();
+        _thumbnailCancellation.Dispose();
+        _thumbnailCancellation = new CancellationTokenSource();
+        _imageLoading.CancelThumbnails(reason);
+
+        foreach (var owner in _thumbnailContainerOwners.Values)
+        {
+            owner.Item.ReleaseThumbnailLease();
+        }
+        _thumbnailContainerOwners.Clear();
+
+        CancelInspectorImageRequest();
+        InspectorImage.Source = null;
+        if (_inspectorThumbnailItem is { } inspectorItem)
+        {
+            _inspectorThumbnailItem = null;
+            inspectorItem.ReleaseThumbnailLease();
+        }
+
+        foreach (var item in Items)
+        {
+            item.ReleaseThumbnail();
+        }
+
+        _imageLoading.LogState($"released file view · {reason}");
     }
 
     private ListViewBase ActiveFileView =>
@@ -3379,10 +3548,26 @@ public sealed partial class MainWindow : Window
     {
         UpdateInspector(item);
 
-        if (item?.Item.IsImage == true)
+        if (item?.Item.IsImage == true && _activeProject is { } project)
         {
-            await item.LoadThumbnailAsync();
-            if (ReferenceEquals(_selectedItem, item) && item.Thumbnail is not null)
+            var version = _inspectorImageVersion;
+            var cancellationToken = _inspectorImageCancellation!.Token;
+            try
+            {
+                await item.LoadThumbnailAsync(
+                        _imageLoading,
+                        project.RootPath,
+                        _thumbnailCancellation.Token)
+                    .WaitAsync(cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            if (!cancellationToken.IsCancellationRequested
+                && version == _inspectorImageVersion
+                && ReferenceEquals(_selectedItem, item)
+                && item.Thumbnail is not null)
             {
                 InspectorImage.Source = item.Thumbnail;
                 InspectorImage.Visibility = Visibility.Visible;
@@ -3393,6 +3578,15 @@ public sealed partial class MainWindow : Window
 
     private void UpdateInspector(ExplorerItemViewModel? item)
     {
+        CancelInspectorImageRequest();
+        if (!ReferenceEquals(_inspectorThumbnailItem, item))
+        {
+            InspectorImage.Source = null;
+            _inspectorThumbnailItem?.ReleaseThumbnailLease();
+            _inspectorThumbnailItem = item?.Item.IsImage == true ? item : null;
+            _inspectorThumbnailItem?.AcquireThumbnailLease();
+        }
+
         if (item is null)
         {
             InspectorName.Text = "未选择文件";
@@ -3420,6 +3614,14 @@ public sealed partial class MainWindow : Window
         SelectionStatusText.Text = item.Item.IsDirectory
             ? $"已选择文件夹 · {item.Name}"
             : $"已选择 1 个文件 · {item.SizeText}";
+    }
+
+    private void CancelInspectorImageRequest()
+    {
+        _inspectorImageVersion++;
+        _inspectorImageCancellation?.Cancel();
+        _inspectorImageCancellation?.Dispose();
+        _inspectorImageCancellation = new CancellationTokenSource();
     }
 
     private async void OnOpenSelectedClicked(object sender, RoutedEventArgs e)
@@ -4099,6 +4301,7 @@ public sealed partial class MainWindow : Window
     {
         _previewMode = mode;
         ConfigurePreviewPresentation(mode);
+        ReleaseThumbnailSurface(PreviewFilmstrip);
         PreviewItems.Clear();
         foreach (var candidate in Items)
         {
@@ -4134,6 +4337,16 @@ public sealed partial class MainWindow : Window
 
     private async Task ShowPreviewItemAsync(ExplorerItemViewModel item)
     {
+        if (item.Item.IsImage
+            && PreviewOverlay.Visibility == Visibility.Visible
+            && (string.Equals(_previewImageLoadingPath, item.FullPath, StringComparison.OrdinalIgnoreCase)
+                || (string.Equals(_previewImageReadyPath, item.FullPath, StringComparison.OrdinalIgnoreCase)
+                    && PreviewImage.Source is not null)))
+        {
+            return;
+        }
+
+        CancelPreviewImageRequest("preview switched");
         var previewVersion = ++_previewVersion;
         AppDiagnostics.Log($"Preview requested · {item.FullPath} · version={previewVersion}");
         try
@@ -4141,6 +4354,10 @@ public sealed partial class MainWindow : Window
             if (_activeProject is null) return;
             new PathBoundary(_activeProject.RootPath).EnsureSafe(item.FullPath);
             await ShowPreviewItemCoreAsync(item, previewVersion);
+        }
+        catch (OperationCanceledException)
+        {
+            // Closing, navigation, and a newer preview request supersede this load.
         }
         catch (Exception exception)
         {
@@ -4170,23 +4387,37 @@ public sealed partial class MainWindow : Window
         }
         else if (item.Item.IsImage)
         {
+            var cancellationToken = StartPreviewImageRequest(item.FullPath);
             try
             {
-                var file = await StorageFile.GetFileFromPathAsync(item.FullPath);
-                using var stream = await file.OpenReadAsync();
-                var bitmap = new BitmapImage();
-                await bitmap.SetSourceAsync(stream);
-                if (previewVersion != _previewVersion)
+                var bitmap = await _imageLoading.LoadPreviewAsync(
+                    _activeProject!.RootPath,
+                    item.FullPath,
+                    cancellationToken);
+                if (cancellationToken.IsCancellationRequested || previewVersion != _previewVersion)
                 {
                     return;
                 }
 
                 PreviewImage.Source = bitmap;
+                _previewImageReadyPath = item.FullPath;
                 ShowImagePreviewControls();
+            }
+            catch (OperationCanceledException)
+            {
+                // A newer image or preview close superseded this request.
             }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
             {
                 if (previewVersion == _previewVersion) ShowPreviewFallback(item, "Windows 无法解码这个图像文件");
+            }
+            finally
+            {
+                if (previewVersion == _previewVersion
+                    && string.Equals(_previewImageLoadingPath, item.FullPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    _previewImageLoadingPath = null;
+                }
             }
         }
         else if (WordPreviewReader.Supports(item.Item.Extension))
@@ -4258,6 +4489,28 @@ public sealed partial class MainWindow : Window
         PreviewEnterFolderButton.Visibility = Visibility.Collapsed;
         PreviewCopyImageButton.Visibility = Visibility.Collapsed;
         PreviewFallback.Visibility = Visibility.Collapsed;
+    }
+
+    private CancellationToken StartPreviewImageRequest(string path)
+    {
+        _previewImageCancellation?.Dispose();
+        _previewImageCancellation = new CancellationTokenSource();
+        _previewImageLoadingPath = path;
+        _previewImageReadyPath = null;
+        return _previewImageCancellation.Token;
+    }
+
+    private void CancelPreviewImageRequest(string reason)
+    {
+        if (_previewImageCancellation is not null)
+        {
+            _previewImageCancellation.Cancel();
+            _previewImageCancellation.Dispose();
+            _previewImageCancellation = null;
+            _imageLoading.CancelPreviews(reason);
+        }
+        _previewImageLoadingPath = null;
+        _previewImageReadyPath = null;
     }
 
     private void ShowFolderPreview(ExplorerItemViewModel item)
@@ -4688,7 +4941,10 @@ public sealed partial class MainWindow : Window
             return;
         }
 
+        CancelLinkedImageRequest("linked image switched");
         var version = ++_linkedPreviewImageVersion;
+        _linkedImageCancellation = new CancellationTokenSource();
+        var cancellationToken = _linkedImageCancellation.Token;
         try
         {
             var boundary = new PathBoundary(_activeProject.RootPath);
@@ -4702,11 +4958,11 @@ public sealed partial class MainWindow : Window
             LinkedImagePreviewLoading.IsActive = true;
             LinkedImagePreviewOverlay.Visibility = Visibility.Visible;
 
-            var file = await StorageFile.GetFileFromPathAsync(safePath);
-            using var stream = await file.OpenReadAsync();
-            var bitmap = new BitmapImage();
-            await bitmap.SetSourceAsync(stream);
-            if (version != _linkedPreviewImageVersion)
+            var bitmap = await _imageLoading.LoadPreviewAsync(
+                _activeProject.RootPath,
+                safePath,
+                cancellationToken);
+            if (cancellationToken.IsCancellationRequested || version != _linkedPreviewImageVersion)
             {
                 return;
             }
@@ -4716,11 +4972,17 @@ public sealed partial class MainWindow : Window
             LinkedImagePreviewLoading.Visibility = Visibility.Collapsed;
             AppDiagnostics.Log($"Markdown linked image preview ready · {safePath}");
         }
-        catch (Exception exception) when (exception is IOException
-                                           or UnauthorizedAccessException
-                                           or ArgumentException
-                                           or System.Runtime.InteropServices.COMException)
+        catch (OperationCanceledException)
         {
+            // The linked overlay was closed or another link was selected.
+        }
+        catch (Exception exception)
+        {
+            if (cancellationToken.IsCancellationRequested || version != _linkedPreviewImageVersion)
+            {
+                return;
+            }
+
             CloseLinkedImagePreview();
             var message = $"无法预览链接图片：{exception.Message}";
             ShowPreviewLinkNotice(message);
@@ -4732,12 +4994,26 @@ public sealed partial class MainWindow : Window
     private void CloseLinkedImagePreview()
     {
         _linkedPreviewImageVersion++;
+        CancelLinkedImageRequest("linked image closed");
         _linkedPreviewImagePath = null;
         LinkedImagePreviewImage.Source = null;
         LinkedImagePreviewLoading.IsActive = false;
         LinkedImagePreviewLoading.Visibility = Visibility.Collapsed;
         LinkedImagePreviewOverlay.Visibility = Visibility.Collapsed;
         LinkedImageCopyButton.Content = "复制图片";
+    }
+
+    private void CancelLinkedImageRequest(string reason)
+    {
+        if (_linkedImageCancellation is null)
+        {
+            return;
+        }
+
+        _linkedImageCancellation.Cancel();
+        _linkedImageCancellation.Dispose();
+        _linkedImageCancellation = null;
+        _imageLoading.CancelPreviews(reason);
     }
 
     private void ShowPreviewLinkNotice(string message)
@@ -5541,10 +5817,22 @@ public sealed partial class MainWindow : Window
     private void ClosePreview()
     {
         _previewVersion++;
+        CancelPreviewImageRequest("preview closed");
         PreviewOverlay.Visibility = Visibility.Collapsed;
         SinglePreviewScrim.Visibility = Visibility.Collapsed;
         ResetPreviewContent();
         _previewItem = null;
+        _synchronizingPreview = true;
+        try
+        {
+            PreviewFilmstrip.SelectedItem = null;
+            ReleaseThumbnailSurface(PreviewFilmstrip);
+            PreviewItems.Clear();
+        }
+        finally
+        {
+            _synchronizingPreview = false;
+        }
     }
 
     private void SetStatus(string message)

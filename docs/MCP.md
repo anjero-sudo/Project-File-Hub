@@ -29,5 +29,3 @@ required = false
 enabled_tools = ["get_active_project", "list_project_files", "search_project_files", "read_project_text"]
 default_tools_approval_mode = "prompt"
 ```
-
-The ChatGPT desktop app, Codex CLI, and Codex IDE extension support local STDIO MCP servers on the same Codex host. See the [official OpenAI MCP documentation](https://developers.openai.com/codex/mcp/).
